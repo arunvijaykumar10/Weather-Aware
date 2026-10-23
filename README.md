@@ -4,11 +4,76 @@ A full-stack intelligent routing platform designed to calculate driving routes f
 
 ---
 
-## Architecture Overview
+## Architecture Note & Design Principles
 
-- **Frontend**: React 18 + TypeScript + Vite + Material UI (MUI) + Leaflet / React-Leaflet
-- **Backend**: Python 3.12 + Django 5 + Django REST Framework + django-cors-headers
-- **Single Source of Truth**: The backend manages routing integrations, weather risk assessment, checkpoint sampling, and route scoring. The frontend displays maps, route alternatives, and risk alerts.
+### 1. Single Source of Truth
+- The **backend (Django REST Framework)** is the sole authority for:
+  - Driving corridor generation & coordinate geometries (up to 3 routes)
+  - Corridor checkpoint sampling (at 10, 25, or 50-mile intervals)
+  - ETA propagation per checkpoint
+  - Weather forecast retrieval (Open-Meteo) & explicit data availability handling
+  - Weather hazard risk scoring (wind, rain, snow)
+  - Truck weight & load-adjusted risk modifiers (e.g., rollover risk on light loads in high winds)
+  - Final route eligibility and safety ranking
+- The **frontend (React + TypeScript + MUI + Leaflet)** consumes backend responses purely for visualization (interactive map rendering, checkpoint inspection, risk heatmaps, and recommendation badges). **The frontend never duplicates routing or safety decision logic.**
+
+### 2. Main Analysis API Contract: `POST /api/routes/analyze/`
+- **Throttling**: Enforced via DRF `ScopedRateThrottle` (`route_analysis: 30/minute`) to preserve external provider quotas and prevent denial-of-service.
+- **Error Handling**: Standardized error envelope on all 4xx/5xx responses:
+  ```json
+  {
+    "error": {
+      "code": "validation_error | request_throttled | api_error",
+      "message": "Human-readable summary message.",
+      "details": {
+        "field_name": ["Specific validation message"]
+      }
+    }
+  }
+  ```
+
+#### Request Schema
+| Field | Type | Description / Constraints |
+| :--- | :--- | :--- |
+| `origin` | `string` | Origin address or coordinates (non-empty) |
+| `destination` | `string` | Destination address or coordinates (non-empty) |
+| `departure_time` | `string` (ISO 8601) | **Must include timezone offset** (e.g. `2026-10-23T14:00:00Z`). Naive timestamps are strictly rejected. |
+| `load_weight_lb` | `number` | Positive gross truck/cargo weight in pounds (`> 0`) |
+| `checkpoint_interval_miles` | `number` | Sampling spacing along route corridor: `10`, `25`, or `50` |
+
+#### Response Schema Structure
+- `routes_requested`: `number` (target 3)
+- `routes_returned`: `number`
+- `fewer_routes_reason`: `string | null` (populated when `< 3` corridors exist or provider limits return fewer)
+- `routes`: Array of route alternatives:
+  - `route_id`, `provider_summary`, `geometry` (ordered `[lat, lon]` pairs), `distance_miles`, `duration_minutes`
+  - `checkpoints`: Sampled points along the route corridor:
+    - `checkpoint_id`, `lat`, `lon`, `cumulative_distance_miles`
+    - `eta`: ISO 8601 timestamp with timezone offset
+    - `forecast_timestamp`: Matching forecast hour timestamp
+    - `weather`: Values with explicit availability:
+      - `wind_speed_mph`, `wind_speed_availability` (`available | unavailable | missing`)
+      - `rain_in_per_hr`, `rain_availability` (`available | unavailable | missing`)
+      - `snow_in_per_hr`, `snow_availability` (`available | unavailable | missing`)
+    - `condition_risks`: Per-condition risks (`wind_risk`, `rain_risk`, `snow_risk`)
+    - `weather_risk`: Base risk level (`low | moderate | high | severe | no_travel | unknown`)
+    - `load_adjusted_risk`: Weight-factored risk level
+    - `load_rule_applied`: Rule description (e.g., "High-profile light-load wind penalty applied")
+  - `metrics`:
+    - `miles_per_risk_category`: Dict mapping each risk level to cumulative miles
+    - `severe_miles`, `high_miles`, `no_travel_miles`, `unknown_miles`
+    - `average_risk`: Overall route risk tier
+    - `has_no_travel_segment`: Boolean flag
+    - `forecast_coverage_pct`: Percentage of route covered by active forecasts (0-100)
+  - `eligibility`: `is_eligible` (`boolean`) and `ineligibility_reasons` (`string[]`)
+- `recommendation`:
+  - `recommended_route_id`: Selected safest route ID (or `null`)
+  - `route_eligibility`: Map of route ID to boolean eligibility
+  - `ranking_reasons`: Array of human-readable rationale
+  - `no_route_meets_safety_thresholds`: Boolean indicator when all alternatives fail safety rules
+- `forecast_timeline`: Array of 48-hour forward timelines per checkpoint (placeholder for Task 10A)
+- `warnings`: Operational and degraded condition warnings
+- `provider_errors`: Upstream provider error objects `{ provider, code, message }`
 
 ---
 
@@ -18,6 +83,9 @@ A full-stack intelligent routing platform designed to calculate driving routes f
 spotter-ai/
 ├── frontend/
 │   ├── src/
+│   │   ├── types/
+│   │   │   ├── api.ts          # Typed API contracts matching backend DRF serializers
+│   │   │   └── api.test.ts     # Schema typing and contract validation tests
 │   │   ├── App.tsx             # Main application layout with MUI
 │   │   ├── App.test.tsx        # Vitest & React Testing Library tests
 │   │   ├── main.tsx            # Vite root entry
@@ -28,7 +96,14 @@ spotter-ai/
 │   └── vite.config.ts          # Vite bundler & Vitest configuration
 ├── backend/
 │   ├── config/                 # Django project settings & root URLs
-│   ├── routing/                # Django routing application & API views
+│   ├── routing/
+│   │   ├── serializers.py      # DRF request and response validation serializers
+│   │   ├── views.py            # HealthCheckView and RouteAnalyzeView
+│   │   ├── urls.py             # Route definitions
+│   │   ├── exceptions.py       # Standardized exception handler & error envelope
+│   │   └── tests/
+│   │       ├── test_health.py  # Health endpoint tests
+│   │       └── test_route_analyze_schema.py # Schema, validation & throttling tests
 │   ├── requirements.txt        # Backend dependencies
 │   ├── pytest.ini              # Pytest configuration
 │   └── manage.py               # Django management CLI
@@ -71,7 +146,7 @@ cp .env.example .env
    ```bash
    pip install -r requirements.txt
    ```
-4. Run migrations (initial setup):
+4. Run migrations:
    ```bash
    python manage.py migrate
    ```
@@ -80,10 +155,8 @@ cp .env.example .env
    python manage.py runserver 8000
    ```
    The backend API will be available at `http://localhost:8000`.
-   Verify the health endpoint:
-   ```bash
-   curl http://localhost:8000/api/health/
-   ```
+   - Health endpoint: `GET http://localhost:8000/api/health/`
+   - Route Analysis endpoint: `POST http://localhost:8000/api/routes/analyze/`
 
 ### 3. Frontend Setup & Run
 
@@ -128,4 +201,3 @@ npm run build
 cd backend
 venv/bin/python manage.py check
 ```
-# Weather-Aware
