@@ -173,12 +173,19 @@ class WeatherService:
         for batch_start in range(0, len(missing_cells), MAX_WEATHER_COORDINATES_PER_BATCH):
             batch = missing_cells[batch_start : batch_start + MAX_WEATHER_COORDINATES_PER_BATCH]
             batch_results = cls.fetch_batch_from_open_meteo(batch, forecast_days, session=session)
+            fetch_time_iso = datetime.now(timezone.utc).isoformat()
             for (grid_lat, grid_lon), single_result in zip(batch, batch_results):
                 parsed = cls.parse_hourly_forecast(single_result)
                 grid_forecast_map[(grid_lat, grid_lon)] = parsed
+                cache_key = cls.build_cache_key(grid_lat, grid_lon)
                 cache.set(
-                    cls.build_cache_key(grid_lat, grid_lon),
+                    cache_key,
                     parsed,
+                    timeout=WEATHER_CACHE_TTL_SECONDS,
+                )
+                cache.set(
+                    f"{cache_key}_meta",
+                    {"fetched_at": fetch_time_iso},
                     timeout=WEATHER_CACHE_TTL_SECONDS,
                 )
 
