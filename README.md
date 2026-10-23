@@ -165,9 +165,58 @@ Candidate routes are compared strictly in prioritized sequence using rounded tol
   - `route_eligibility`: Map of route ID to boolean eligibility
   - `ranking_reasons`: Array of human-readable rationale
   - `no_route_meets_safety_thresholds`: Boolean indicator when all alternatives fail safety rules
-- `forecast_timeline`: Array of 48-hour forward timelines per checkpoint (placeholder for Task 10A)
+- `forecast_timeline`: Array of 48-hour forward timelines per checkpoint (Task 10A)
 - `warnings`: Operational and degraded condition warnings
 - `provider_errors`: Upstream provider error objects `{ provider, code, message }`
+
+---
+
+### 7. Forecast Timeline & Corridor Heatmap Grid (Tasks 10A & 10B)
+
+#### A. Forecast Timeline Architecture (`POST /api/routes/forecast-timeline/`)
+- **Cache Reuse**: Reuses cached Open-Meteo hourly weather data fetched during the initial corridor analysis (`build_cache_key(lat, lon)` with 1-hour TTL), avoiding redundant upstream HTTP calls.
+- **Hourly Slices (0 to 48 Hours)**: Returns 49 discrete integer hour entries (`offset_hours`: 0 through 48) relative to trip departure time for each route checkpoint.
+- **Payload Structure**: Each hourly entry returns:
+  - `offset_hours`: Integer 0..48
+  - `forecast_timestamp`: ISO 8601 UTC timestamp
+  - `wind_speed_mph`, `rain_in_per_hr`, `snow_in_per_hr`
+  - `condition_risks`: Per-condition risks (wind, rain, snow)
+  - `weather_risk`: Composite weather risk
+  - `load_adjusted_risk`: Cargo-weight adjusted risk using the Task 6 engine
+  - `numeric_risk_score`: 0 (Low), 1 (Moderate), 2 (High), 3 (Severe), 4 (No Travel), or null
+  - `availability`: `"available"` | `"unavailable"` | `"beyond_forecast"`
+- **Zero-Filling Prohibition**: Missing weather values are never silently replaced with zero. They remain `null`, evaluated as `unknown`, and flagged as unavailable.
+- **Forecast Freshness Tracking**: Records `forecast_fetched_at` and `forecast_age_seconds` so the client UI displays exact data age.
+- **Fixed Recommendation Baseline**: The timeline slider is designed strictly for departure planning exploration. Route rankings and recommendation reasons are permanently grounded in predicted checkpoint arrival times (ETA-matched weather) and do not fluctuate when scrubbing the slider.
+
+#### B. Corridor Heatmap Sampling Algorithm
+1. **Centerline Interpolation**:
+   - The corridor polyline geometry is sampled along its path at fixed intervals (`DEFAULT_GRID_SAMPLE_INTERVAL_MILES = 25.0` miles).
+   - Vertex distances are scaled to authoritative route mileage so interpolation aligns with real highway geometry.
+2. **Perpendicular Geodesic Sampling**:
+   - For each cross-section, the tangent heading is computed from adjacent polyline coordinates.
+   - Lateral waypoints are projected perpendicularly to the left ($+90^\circ$) and right ($-90^\circ$) at a documented corridor half-width (`DEFAULT_CORRIDOR_HALF_WIDTH_MILES = 15.0` miles, ~24.14 km) via spherical trigonometry (`compute_lateral_waypoint`).
+3. **Grid Rounding & Deduplication**:
+   - All sample coordinates (centerline and lateral cross-sections across all routes) are rounded to Open-Meteo's grid resolution ($0.01^\circ \approx 1.1\text{ km}$).
+   - Co-located points are de-duplicated into a minimal unique coordinate set.
+4. **Safety Cap & Batch Fetching**:
+   - The unique sample count is capped at `MAX_HEATMAP_GRID_POINTS = 120` points.
+   - If candidate samples exceed 120, the set is truncated, `is_capped = true` is set, and an explicit warning is attached (`"Heatmap corridor sample grid capped at 120 points (requested N)."`).
+   - Uncached grid cells are batched in chunks of 50 (`MAX_WEATHER_COORDINATES_PER_BATCH`).
+5. **Direct Risk Intensity Mapping**:
+   - In the frontend, heatmap cell intensity directly renders the backend's `numeric_risk_score` (0 through 4) for the active slider hour.
+   - The client performs zero client-side risk recalculation.
+   - Translucent overlapping radial zones blend contiguous sample points to display regional weather hazard severity.
+   - Includes controls for toggling visibility, adjusting opacity (10% to 100%), and inspecting numeric risk levels.
+
+#### C. Heatmap Limitations & Disclaimers
+1. **Interpolated Between Discrete Forecast Samples**:
+   - The heatmap is explicitly labeled `"Interpolated between forecast samples"`.
+   - Numerical Weather Prediction (NWP) model outputs possess native resolutions of 1–11 km. The heatmap visualizes regional weather patterns across the corridor and does not imply sub-kilometer microclimate precision between sampling cross-sections.
+2. **Topographic & Microclimatic Variations**:
+   - Localized phenomena (such as canyon wind tunneling, mountain pass gusts, or microscale rain shadows) occurring between 25-mile sampling intervals may not be fully resolved.
+3. **Static Temporal Snapshot**:
+   - Scrubbing the slider visualizes atmospheric conditions across the entire corridor at a single point in time ($T = \text{departure} + H$), whereas an actual moving truck traverses different locations at different future times. The primary safety score and recommendation correctly use dynamic arrival ETAs for this reason.
 
 ---
 

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import App from './App';
-import { MOCK_ROUTE_ANALYSIS_DATA } from './mock/mockRouteAnalysis';
+import { MOCK_ROUTE_ANALYSIS_DATA, MOCK_FORECAST_TIMELINE_DATA } from './mock/mockRouteAnalysis';
 
 describe('App component', () => {
   beforeEach(() => {
@@ -80,6 +80,13 @@ describe('App component', () => {
           ok: true,
           status: 200,
           json: async () => MOCK_ROUTE_ANALYSIS_DATA,
+        });
+      }
+      if (url.includes('/api/routes/forecast-timeline/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => MOCK_FORECAST_TIMELINE_DATA,
         });
       }
       return Promise.reject(new Error('Unknown endpoint'));
