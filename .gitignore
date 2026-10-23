@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+backend/venv/
+.venv/
+venv/
+
+# Build artifacts
+frontend/dist/
+*.egg-info/
+dist/
+build/
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+db.sqlite3
+*.log
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and secrets (Never commit real secrets)
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
