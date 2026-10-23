@@ -28,6 +28,7 @@ export interface RouteAnalyzeRequest {
  */
 export interface WeatherValues {
   wind_speed_mph: number | null;
+  wind_gusts_mph?: number | null;
   wind_speed_availability: WeatherAvailability;
   rain_in_per_hr: number | null;
   rain_availability: WeatherAvailability;
