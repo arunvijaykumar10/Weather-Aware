@@ -32,6 +32,7 @@ from .geo_math import (
     scale_lateral_offset_km,
 )
 from .geocoding_service import GeocodingService
+from .risk_engine import compute_corridor_risk_metrics, evaluate_checkpoint_risk
 from .weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
@@ -410,6 +411,26 @@ class RoutingService:
         for warning in weather_warnings:
             if warning not in operational_warnings:
                 operational_warnings.append(warning)
+
+        for corridor in corridor_bundle:
+            for checkpoint in corridor.get("checkpoints", []):
+                weather_dict = checkpoint.get("weather", {})
+                risk_assessment = evaluate_checkpoint_risk(
+                    wind_speed_mph=weather_dict.get("wind_speed_mph"),
+                    wind_gusts_mph=weather_dict.get("wind_gusts_mph"),
+                    rain_in_per_hr=weather_dict.get("rain_in_per_hr"),
+                    snow_in_per_hr=weather_dict.get("snow_in_per_hr"),
+                    load_weight_lb=load_weight_lb,
+                )
+                checkpoint.update(risk_assessment.to_dict())
+
+            corridor["metrics"] = compute_corridor_risk_metrics(
+                checkpoints=corridor.get("checkpoints", []),
+                total_distance_miles=corridor.get("distance_miles", 0.0),
+                forecast_coverage_pct=corridor.get("metrics", {}).get(
+                    "forecast_coverage_pct", 100.0
+                ),
+            )
 
         return self._format_final_analysis_response(corridor_bundle, operational_warnings)
 

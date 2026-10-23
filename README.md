@@ -62,6 +62,52 @@ A full-stack intelligent routing platform designed to calculate driving routes f
   }
   ```
 
+### 5. Checkpoint Risk Engine & Weather Thresholds
+
+#### Weather Threshold Conventions (Non-Overlapping, Raw Values)
+To eliminate ambiguities from overlapping or gapped assessment brackets, all conditions are classified against raw, unrounded numeric values using explicit non-overlapping half-open intervals:
+
+- **Wind Risk (mph)** (evaluated on peak gusts when available; sustained wind fallback):
+  - `Low`: $< 25.0$
+  - `Moderate`: $25.0 \le \text{wind} < 35.0$
+  - `High`: $35.0 \le \text{wind} < 45.0$
+  - `Severe`: $45.0 \le \text{wind} < 55.0$
+  - `No Travel`: $\ge 55.0$
+- **Rain Risk (in/hr)** (combined stratiform `rain` + convective `showers`):
+  - `Low`: $< 0.10$
+  - `Moderate`: $0.10 \le \text{rain} < 0.25$
+  - `High`: $0.25 \le \text{rain} < 0.50$
+  - `Severe`: $0.50 \le \text{rain} \le 1.00$ (inclusive of 1.00)
+  - `No Travel`: $> 1.00$
+- **Snowfall Risk (in/hr)**:
+  - `Low`: $< 0.50$
+  - `Moderate`: $0.50 \le \text{snow} < 1.00$
+  - `High`: $1.00 \le \text{snow} < 2.00$
+  - `Severe`: $2.00 \le \text{snow} \le 3.00$ (inclusive of 3.00)
+  - `No Travel`: $> 3.00$
+
+#### Combined Weather Risk
+For each checkpoint, the composite weather risk is the highest risk across wind, rain, and snow:
+$$\text{weather\_risk} = \max(\text{wind\_risk}, \text{rain\_risk}, \text{snow\_risk})$$
+
+#### Cargo Load Weight Rules
+Load rules apply after weather classification and **never downgrade** an already-higher weather risk:
+1. `wind >= 55.0 mph`: `No Travel` for any load.
+2. `45.0 <= wind < 55.0 mph AND load > 30,000 lb`: `No Travel` (`load_rule_applied = "wind_45_55_load_gt_30k"`).
+3. `35.0 <= wind < 45.0 mph AND load > 40,000 lb`: At least `Severe` (`load_rule_applied = "wind_35_45_load_gt_40k"`). If already `Severe` or `No Travel`, it remains unchanged.
+4. *Strictly Greater Convention*: Exactly $30,000\text{ lb}$ or $40,000\text{ lb}$ does **not** trigger the respective rule.
+
+#### Unknown Weather Values & Route Ranking Policy
+- **Never Default to Low**: Missing or unavailable weather observations are classified as `RiskLevel.UNKNOWN` and never silently converted to zero.
+- **Partial Missing Values**: A missing variable does not mask a known higher risk from another variable (e.g. wind `High` + rain `Unknown` yields weather risk `High` with `has_unknown_conditions = True`).
+- **Impact on Route Ranking**: In ranking evaluations, corridors with missing or unknown segments are penalized. A corridor with $< 100\%$ forecast coverage is flagged with operational warnings, and routes with critical data gaps cannot be certified as safe alternatives over routes with verified clear forecasts.
+
+#### Numeric Risk Scoring & Metric Averaging
+- Standard numeric scale: $\text{Low} = 0$, $\text{Moderate} = 1$, $\text{High} = 2$, $\text{Severe} = 3$, $\text{No Travel} = 4$.
+- Segment mileage across checkpoints is allocated using a conservative safety policy where the higher risk of adjacent checkpoints governs the connecting segment.
+- Route average risk is computed by distance-weighting known segment scores and mapping to the nearest category integer. If all checkpoints lack forecast data, average risk is `unknown`.
+  ```
+
 #### Request Schema
 | Field | Type | Description / Constraints |
 | :--- | :--- | :--- |
