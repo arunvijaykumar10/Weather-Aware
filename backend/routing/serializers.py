@@ -86,6 +86,7 @@ class RouteAnalyzeRequestSerializer(serializers.Serializer):
 
 class WeatherValuesSerializer(serializers.Serializer):
     wind_speed_mph = serializers.FloatField(allow_null=True)
+    wind_gusts_mph = serializers.FloatField(allow_null=True, required=False, default=None)
     wind_speed_availability = serializers.ChoiceField(choices=WEATHER_AVAILABILITY_CHOICES)
     rain_in_per_hr = serializers.FloatField(allow_null=True)
     rain_availability = serializers.ChoiceField(choices=WEATHER_AVAILABILITY_CHOICES)

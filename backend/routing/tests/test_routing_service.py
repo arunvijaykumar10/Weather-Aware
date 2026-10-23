@@ -57,6 +57,15 @@ def routing_service(mock_geocoder):
     return service
 
 
+@pytest.fixture(autouse=True)
+def mock_weather_enrichment_in_routing_service():
+    with patch(
+        "routing.routing_service.WeatherService.enrich_corridors_with_weather"
+    ) as mock_enrich:
+        mock_enrich.return_value = []
+        yield mock_enrich
+
+
 class TestRoutingServiceMocked:
     def test_short_route_attempts_native_alternatives(self, routing_service):
         """Short route (< 90 km, e.g. Boulder to Fort Collins ~ 70 km) should request native alternatives."""

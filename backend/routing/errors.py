@@ -61,11 +61,28 @@ class ProviderTimeoutError(RoutingServiceError):
 
 
 class ProviderSnappingError(RoutingServiceError):
-    """Raised when a candidate via-waypoint cannot snap to the drivable network (ORS error 2010)."""
-
     def __init__(
         self,
         message: str = "Waypoint could not be snapped to the road network.",
         details: dict = None,
     ):
         super().__init__(message, code="waypoint_snapping_error", details=details)
+
+
+class WeatherServiceError(RoutingServiceError):
+    def __init__(
+        self,
+        message: str = "Weather service encountered an error.",
+        code: str = "weather_service_error",
+        details: dict = None,
+    ):
+        super().__init__(message, code=code, details=details)
+
+
+class WeatherProviderError(WeatherServiceError):
+    def __init__(
+        self,
+        message: str = "Weather provider returned an unexpected error.",
+        details: dict = None,
+    ):
+        super().__init__(message, code="weather_provider_error", details=details)

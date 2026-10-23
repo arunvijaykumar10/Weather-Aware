@@ -32,6 +32,7 @@ from .geo_math import (
     scale_lateral_offset_km,
 )
 from .geocoding_service import GeocodingService
+from .weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +401,15 @@ class RoutingService:
                 operational_warnings.append(
                     "Long-distance route: alternative paths were derived via lateral corridor bypasses."
                 )
+
+        weather_warnings = WeatherService.enrich_corridors_with_weather(
+            corridor_bundle,
+            departure_time_iso=departure_time_iso,
+            session=self.session,
+        )
+        for warning in weather_warnings:
+            if warning not in operational_warnings:
+                operational_warnings.append(warning)
 
         return self._format_final_analysis_response(corridor_bundle, operational_warnings)
 
