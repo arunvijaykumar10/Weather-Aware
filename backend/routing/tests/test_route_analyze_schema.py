@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -19,6 +20,84 @@ def valid_payload():
         "load_weight_lb": 42000.0,
         "checkpoint_interval_miles": 25,
     }
+
+
+@pytest.fixture(autouse=True)
+def mock_routing_service_in_view():
+    """Ensure endpoint tests never make live network calls."""
+    with patch('routing.views.RoutingService') as mock_cls:
+        instance = mock_cls.return_value
+        instance.analyze_routes.return_value = {
+            "routes_requested": 3,
+            "routes_returned": 1,
+            "fewer_routes_reason": "Single primary corridor identified in simulation.",
+            "routes": [
+                {
+                    "route_id": "route_primary",
+                    "provider_summary": "Simulated corridor from Denver, CO to Salt Lake City, UT",
+                    "geometry": [[39.7392, -104.9903], [40.7608, -111.8910]],
+                    "distance_miles": 504.2,
+                    "duration_minutes": 480.0,
+                    "checkpoints": [
+                        {
+                            "checkpoint_id": "cp_0",
+                            "lat": 39.7392,
+                            "lon": -104.9903,
+                            "cumulative_distance_miles": 0.0,
+                            "eta": "2026-10-23T14:00:00Z",
+                            "forecast_timestamp": "2026-10-23T14:00:00Z",
+                            "weather": {
+                                "wind_speed_mph": 12.0,
+                                "wind_speed_availability": "available",
+                                "rain_in_per_hr": 0.0,
+                                "rain_availability": "available",
+                                "snow_in_per_hr": 0.0,
+                                "snow_availability": "available",
+                            },
+                            "condition_risks": {
+                                "wind_risk": "low",
+                                "rain_risk": "low",
+                                "snow_risk": "low",
+                            },
+                            "weather_risk": "low",
+                            "load_adjusted_risk": "low",
+                            "load_rule_applied": None,
+                        }
+                    ],
+                    "metrics": {
+                        "miles_per_risk_category": {
+                            "low": 504.2,
+                            "moderate": 0.0,
+                            "high": 0.0,
+                            "severe": 0.0,
+                            "no_travel": 0.0,
+                            "unknown": 0.0,
+                        },
+                        "severe_miles": 0.0,
+                        "high_miles": 0.0,
+                        "no_travel_miles": 0.0,
+                        "unknown_miles": 0.0,
+                        "average_risk": "low",
+                        "has_no_travel_segment": False,
+                        "forecast_coverage_pct": 100.0,
+                    },
+                    "eligibility": {
+                        "is_eligible": True,
+                        "ineligibility_reasons": [],
+                    },
+                }
+            ],
+            "recommendation": {
+                "recommended_route_id": "route_primary",
+                "route_eligibility": {"route_primary": True},
+                "ranking_reasons": ["Optimal road conditions and clear weather."],
+                "no_route_meets_safety_thresholds": False,
+            },
+            "forecast_timeline": [],
+            "warnings": [],
+            "provider_errors": [],
+        }
+        yield instance
 
 
 @pytest.mark.django_db

@@ -2,6 +2,14 @@ from rest_framework.views import exception_handler
 from rest_framework.exceptions import ValidationError, Throttled
 from rest_framework.response import Response
 from rest_framework import status
+from .errors import (
+    RoutingServiceError,
+    GeocodingError,
+    NoRouteFoundError,
+    ProviderAuthError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+)
 
 
 def custom_exception_handler(exc, context):
@@ -15,6 +23,33 @@ def custom_exception_handler(exc, context):
         }
     }
     """
+    # 1. Domain Routing Exceptions
+    if isinstance(exc, RoutingServiceError):
+        if isinstance(exc, GeocodingError):
+            status_code = status.HTTP_400_BAD_REQUEST
+        elif isinstance(exc, NoRouteFoundError):
+            status_code = status.HTTP_404_NOT_FOUND
+        elif isinstance(exc, ProviderAuthError):
+            status_code = status.HTTP_401_UNAUTHORIZED
+        elif isinstance(exc, ProviderRateLimitError):
+            status_code = status.HTTP_429_TOO_MANY_REQUESTS
+        elif isinstance(exc, ProviderTimeoutError):
+            status_code = status.HTTP_504_GATEWAY_TIMEOUT
+        else:
+            status_code = status.HTTP_502_BAD_GATEWAY
+
+        return Response(
+            {
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                }
+            },
+            status=status_code,
+        )
+
+    # 2. DRF Built-in Exceptions
     response = exception_handler(exc, context)
 
     if response is not None:
