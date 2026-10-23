@@ -106,7 +106,25 @@ Load rules apply after weather classification and **never downgrade** an already
 - Standard numeric scale: $\text{Low} = 0$, $\text{Moderate} = 1$, $\text{High} = 2$, $\text{Severe} = 3$, $\text{No Travel} = 4$.
 - Segment mileage across checkpoints is allocated using a conservative safety policy where the higher risk of adjacent checkpoints governs the connecting segment.
 - Route average risk is computed by distance-weighting known segment scores and mapping to the nearest category integer. If all checkpoints lack forecast data, average risk is `unknown`.
-  ```
+
+### 6. Route Summaries, Recommendation & Safety Ranking
+
+#### Segment Risk Attribution & Distance Accounting
+- **Adjacent Checkpoint Intervals**: Distance is allocated per segment $[d_i, d_{i+1}]$ between consecutive checkpoints rather than assuming equal spacing.
+- **Conservative Safety Rule**: The worse risk between the two adjacent endpoints governs the connecting interval.
+- **Strict Conservation of Distance**: Interval lengths sum exactly to total route distance ($\sum \Delta d_i = D_{\text{total}}$). Discretization drift is normalized against the dominant category.
+
+#### Lexicographic Ranking Priority (No Weighted Sums)
+Candidate routes are compared strictly in prioritized sequence using rounded tolerances to eliminate measurement noise:
+1. **Fewest Severe Miles** (rounded to $0.1\text{ mi}$)
+2. **Fewest High Miles** (rounded to $0.1\text{ mi}$)
+3. **Lowest Average Risk Score** (rounded to $0.01$)
+4. **Shortest Travel Duration** (rounded to $0.1\text{ min}$)
+
+#### Safety Eligibility & Ineligible Route Isolation
+- **No-Travel Ineligibility**: Any corridor with $\text{no\_travel\_miles} > 0$ or an active No-Travel segment is marked `is_eligible = false`. Ineligible routes are never recommended over an eligible route regardless of trip duration.
+- **All Routes Ineligible**: If all available corridors contain No-Travel hazards, `recommended_route_id` returns `null`, `no_route_meets_safety_thresholds` returns `true`, and routes are ordered for display by `no_travel_miles` ascending. Such routes are never labelled safe.
+- **Incomplete Forecast Policy**: Routes with missing forecast segments are labelled "incomplete forecast". Corridors with 100% verified weather coverage are strictly preferred over incomplete corridors; incomplete routes are only recommended when no full-coverage eligible alternative exists, accompanied by an explicit warning indicating the unverified exposure percentage.
 
 #### Request Schema
 | Field | Type | Description / Constraints |

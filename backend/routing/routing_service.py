@@ -33,6 +33,7 @@ from .geo_math import (
 )
 from .geocoding_service import GeocodingService
 from .risk_engine import compute_corridor_risk_metrics, evaluate_checkpoint_risk
+from .route_scoring_service import rank_and_score_corridors
 from .weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
@@ -443,7 +444,9 @@ class RoutingService:
             route_record.pop("_meters", None)
             route_record.pop("_seconds", None)
 
-        corridor_count = len(corridor_bundle)
+        ordered_corridors, recommendation_payload = rank_and_score_corridors(corridor_bundle)
+
+        corridor_count = len(ordered_corridors)
         fewer_routes_reason = None
         if corridor_count < 3:
             fewer_routes_reason = (
@@ -452,25 +455,12 @@ class RoutingService:
                 else "Only 2 distinct driving corridors meet truck safety, detour (<= 1.5x), and overlap (<= 80%) criteria."
             )
 
-        ranking_reasons = [
-            f"Primary route ({corridor_bundle[0]['distance_miles']} mi, {corridor_bundle[0]['duration_minutes']} min) recommended as the most direct commercial highway corridor."
-        ]
-        if corridor_count > 1:
-            ranking_reasons.append(
-                f"{corridor_count - 1} alternative corridor(s) identified for weather hazard avoidance."
-            )
-
         return {
             "routes_requested": 3,
             "routes_returned": corridor_count,
             "fewer_routes_reason": fewer_routes_reason,
-            "routes": corridor_bundle,
-            "recommendation": {
-                "recommended_route_id": corridor_bundle[0]["route_id"],
-                "route_eligibility": {route["route_id"]: True for route in corridor_bundle},
-                "ranking_reasons": ranking_reasons,
-                "no_route_meets_safety_thresholds": False,
-            },
+            "routes": ordered_corridors,
+            "recommendation": recommendation_payload,
             "forecast_timeline": [],
             "warnings": operational_warnings,
             "provider_errors": [],
