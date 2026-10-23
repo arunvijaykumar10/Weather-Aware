@@ -10,11 +10,15 @@ import {
   ToggleButton,
   FormControl,
   FormLabel,
+  Box,
+  Chip,
+  Stack,
 } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { CheckpointInterval, RouteAnalyzeRequest } from '../types/api';
 import { getUserTimeZone } from '../utils/timeFormat';
-import { useTripForm } from '../hooks/useTripForm';
+import { useTripForm, TRIP_PRESETS, TripPreset } from '../hooks/useTripForm';
 
 interface TripPlannerFormProps {
   isLoading: boolean;
@@ -34,6 +38,8 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
     checkpointInterval,
     setCheckpointInterval,
     validationErrors,
+    applyPreset,
+    handleClear,
     handleSubmit,
   } = useTripForm(onAnalyze);
 
@@ -41,9 +47,66 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
 
   return (
     <Paper elevation={0} sx={{ p: 3, border: 1, borderColor: 'divider' }}>
-      <Typography variant="h5" component="h2" gutterBottom color="primary">
-        Plan Weather-Aware Truck Route
-      </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          mb: 2,
+          gap: 1,
+        }}
+      >
+        <div>
+          <Typography variant="h5" component="h2" color="primary" sx={{ fontWeight: 700 }}>
+            Plan Weather-Aware Truck Route
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Enter real-time locations or select a sample freight corridor below
+          </Typography>
+        </div>
+
+        <Button
+          variant="outlined"
+          size="small"
+          color="secondary"
+          startIcon={<RestartAltIcon />}
+          onClick={handleClear}
+          disabled={isLoading}
+          aria-label="Clear form inputs"
+        >
+          Clear Form
+        </Button>
+      </Box>
+
+      {/* Quick Example Presets */}
+      <Box sx={{ mb: 2.5, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mr: 0.5 }}>
+            Quick Examples:
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+            {TRIP_PRESETS.map((preset: TripPreset) => (
+              <Chip
+                key={preset.id}
+                label={preset.label}
+                size="small"
+                variant="outlined"
+                clickable
+                onClick={() => applyPreset(preset)}
+                disabled={isLoading}
+                color={
+                  origin === preset.origin && destination === preset.destination
+                    ? 'primary'
+                    : 'default'
+                }
+                sx={{ fontSize: '0.75rem' }}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      </Box>
+
       <form onSubmit={handleSubmit} noValidate>
         <Grid container spacing={2.5}>
           <Grid item xs={12} sm={6}>
@@ -51,6 +114,7 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               label="Origin"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
+              placeholder="e.g. Dallas, TX or 32.7767, -96.7970"
               error={Boolean(validationErrors.origin)}
               helperText={validationErrors.origin || 'City, State or "lat, lon" coordinates'}
               fullWidth
@@ -65,6 +129,7 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               label="Destination"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
+              placeholder="e.g. Houston, TX or 29.7604, -95.3698"
               error={Boolean(validationErrors.destination)}
               helperText={validationErrors.destination || 'City, State or "lat, lon" coordinates'}
               fullWidth
@@ -98,7 +163,10 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               label="Cargo Load Weight"
               type="number"
               value={loadWeightLb}
-              onChange={(e) => setLoadWeightLb(Number(e.target.value))}
+              onChange={(e) =>
+                setLoadWeightLb(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              placeholder="e.g. 42000"
               error={Boolean(validationErrors.loadWeightLb)}
               helperText={validationErrors.loadWeightLb || 'Gross cargo weight in pounds'}
               fullWidth

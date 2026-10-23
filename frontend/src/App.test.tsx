@@ -95,6 +95,9 @@ describe('App component', () => {
 
     render(<App />);
 
+    const presetChip = screen.getByText(/Denver, CO → Salt Lake City, UT/i);
+    fireEvent.click(presetChip);
+
     const submitBtn = screen.getByRole('button', {
       name: /analyze driving corridors/i,
     });
