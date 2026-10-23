@@ -4,6 +4,7 @@ import pytest
 import requests
 from django.core.cache import cache
 
+from routing.constants import is_graphhopper_key
 from routing.errors import (
     ProviderAuthError,
     ProviderRateLimitError,
@@ -327,3 +328,121 @@ class TestRoutingServiceMocked:
             assert mock_get.call_count == 1  # Unchanged!
             assert lat2 == 39.7392
             assert lon2 == -104.9903
+
+
+class TestGraphHopperProvider:
+    """Tests for GraphHopper key detection, geocoding, routing, and error handling."""
+
+    def test_is_graphhopper_key_detection(self):
+        valid_uuid = "5ac5cb49-da24-412d-a6aa-eda41db9ef70"
+        assert is_graphhopper_key(valid_uuid) is True
+        assert is_graphhopper_key(f"  {valid_uuid}  ") is True
+        assert is_graphhopper_key("mock_key") is False
+        assert is_graphhopper_key("5b3ce3597851110001cf6248d21234567890abcdef") is False
+        assert is_graphhopper_key("") is False
+        assert is_graphhopper_key(None) is False
+
+    def test_graphhopper_geocoding_parsing(self):
+        cache.clear()
+        gh_key = "5ac5cb49-da24-412d-a6aa-eda41db9ef70"
+        geocoder = GeocodingService(api_key=gh_key)
+        assert geocoder.is_gh is True
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "hits": [
+                {
+                    "point": {"lat": 39.7392, "lng": -104.9903},
+                    "name": "Denver",
+                    "state": "Colorado",
+                }
+            ]
+        }
+
+        with patch.object(geocoder.session, "get", return_value=mock_resp) as mock_get:
+            lat, lon, label = geocoder.geocode("Denver, CO")
+            assert mock_get.call_count == 1
+            assert lat == 39.7392
+            assert lon == -104.9903
+            assert label == "Denver, Colorado"
+
+    def test_graphhopper_routing_success(self, mock_geocoder):
+        gh_key = "5ac5cb49-da24-412d-a6aa-eda41db9ef70"
+        service = RoutingService(api_key=gh_key, geocoding_service=mock_geocoder)
+        assert service.is_gh is True
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "paths": [
+                {
+                    "distance": 800000.0,
+                    "time": 28800000.0,
+                    "points": {
+                        "coordinates": [
+                            [-104.9903, 39.7392],
+                            [-108.0, 40.0],
+                            [-111.8910, 40.7608],
+                        ]
+                    },
+                },
+                {
+                    "distance": 830000.0,
+                    "time": 29800000.0,
+                    "points": {
+                        "coordinates": [
+                            [-104.9903, 39.7392],
+                            [-107.0, 41.5],
+                            [-111.8910, 40.7608],
+                        ]
+                    },
+                },
+            ]
+        }
+
+        with patch.object(service.session, "get", return_value=mock_resp) as mock_get:
+            result = service.analyze_routes(
+                origin="Denver, CO",
+                destination="Salt Lake City, UT",
+                departure_time_iso="2026-10-23T14:00:00Z",
+                load_weight_lb=42000,
+                checkpoint_interval_miles=25,
+            )
+            assert mock_get.call_count == 1
+            assert result["routes_returned"] == 2
+            assert result["routes"][0]["route_id"] == "route_primary"
+            assert result["routes"][1]["route_id"] == "route_alt_1"
+            assert "GraphHopper" in result["warnings"][0]
+
+    def test_graphhopper_rate_limit_and_auth_errors(self, mock_geocoder):
+        gh_key = "5ac5cb49-da24-412d-a6aa-eda41db9ef70"
+        service = RoutingService(api_key=gh_key, geocoding_service=mock_geocoder)
+
+        mock_resp_429 = MagicMock()
+        mock_resp_429.status_code = 429
+        mock_resp_429.ok = False
+        with patch.object(service.session, "get", return_value=mock_resp_429):
+            with pytest.raises(ProviderRateLimitError):
+                service.analyze_routes(
+                    origin="Denver, CO",
+                    destination="Salt Lake City, UT",
+                    departure_time_iso="2026-10-23T14:00:00Z",
+                    load_weight_lb=42000,
+                    checkpoint_interval_miles=25,
+                )
+
+        mock_resp_401 = MagicMock()
+        mock_resp_401.status_code = 401
+        mock_resp_401.ok = False
+        with patch.object(service.session, "get", return_value=mock_resp_401):
+            with pytest.raises(ProviderAuthError):
+                service.analyze_routes(
+                    origin="Denver, CO",
+                    destination="Salt Lake City, UT",
+                    departure_time_iso="2026-10-23T14:00:00Z",
+                    load_weight_lb=42000,
+                    checkpoint_interval_miles=25,
+                )

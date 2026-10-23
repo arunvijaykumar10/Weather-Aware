@@ -10,7 +10,9 @@ from django.core.cache import cache
 from .constants import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     GEOCODE_CACHE_TTL_SECONDS,
+    GRAPHHOPPER_GEOCODE_ENDPOINT,
     ORS_GEOCODE_ENDPOINT,
+    is_graphhopper_key,
 )
 from .errors import (
     GeocodingError,
@@ -32,7 +34,29 @@ class GeocodingService:
         api_key: Optional[str] = None,
         session: Optional[requests.Session] = None,
     ) -> None:
-        self.api_key = api_key or os.environ.get("OPENROUTESERVICE_API_KEY", "")
+        ors_key = os.environ.get("OPENROUTESERVICE_API_KEY", "").strip()
+        gh_key = os.environ.get("GRAPHHOPPER_API_KEY", "").strip()
+        routing_provider = os.environ.get("ROUTING_PROVIDER", "").strip().lower()
+
+        if api_key is not None:
+            self.api_key = api_key
+            self.is_gh = is_graphhopper_key(api_key) or routing_provider == "graphhopper"
+        elif routing_provider == "graphhopper" and gh_key:
+            self.api_key = gh_key
+            self.is_gh = True
+        elif routing_provider == "openrouteservice" and ors_key:
+            self.api_key = ors_key
+            self.is_gh = False
+        elif is_graphhopper_key(ors_key):
+            self.api_key = ors_key
+            self.is_gh = True
+        elif gh_key and (not ors_key or is_graphhopper_key(gh_key)):
+            self.api_key = gh_key
+            self.is_gh = True
+        else:
+            self.api_key = ors_key
+            self.is_gh = False
+
         self.session = session or requests.Session()
 
     def _parse_direct_coordinates(self, query: str) -> Optional[Tuple[float, float, str]]:
@@ -45,6 +69,50 @@ class GeocodingService:
         if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
             raise GeocodingError(f"Coordinates out of bounds: lat={latitude}, lon={longitude}")
         return latitude, longitude, f"{latitude:.4f}, {longitude:.4f}"
+
+    def _fetch_graphhopper_feature(self, query: str) -> Tuple[float, float, str]:
+        key = self.api_key or os.environ.get("GRAPHHOPPER_API_KEY", "")
+        if not key:
+            raise ProviderAuthError(
+                "GRAPHHOPPER_API_KEY is not configured. Please supply an API key in .env."
+            )
+        params = {"q": query, "limit": 1, "key": key}
+        try:
+            response = self.session.get(
+                GRAPHHOPPER_GEOCODE_ENDPOINT,
+                params=params,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.exceptions.Timeout as timeout_err:
+            raise ProviderTimeoutError(
+                f"Geocoding request timed out for '{query}'."
+            ) from timeout_err
+        except requests.exceptions.RequestException as network_err:
+            raise RoutingServiceError(
+                f"Network error geocoding '{query}': {network_err}"
+            ) from network_err
+
+        if response.status_code == 429:
+            raise ProviderRateLimitError("GraphHopper geocoding rate limit exceeded (429).")
+        if response.status_code in (401, 403):
+            raise ProviderAuthError("GraphHopper rejected the API key (401/403 Unauthorized).")
+        if not response.ok:
+            raise GeocodingError(
+                f"Geocoding failed for '{query}' with HTTP {response.status_code}."
+            )
+
+        payload = response.json()
+        hits = payload.get("hits", [])
+        if not hits:
+            raise GeocodingError(f"Location not found: '{query}'.")
+        first_hit = hits[0]
+        point = first_hit.get("point", {})
+        lat = float(point.get("lat"))
+        lon = float(point.get("lng"))
+        name = first_hit.get("name") or query
+        state = first_hit.get("state")
+        label = f"{name}, {state}" if state else name
+        return lat, lon, label
 
     def _fetch_pelias_feature(self, query: str) -> dict:
         if not self.api_key:
@@ -126,10 +194,13 @@ class GeocodingService:
                 cached_entry["label"],
             )
 
-        feature = self._fetch_pelias_feature(cleaned_query)
-        latitude, longitude, display_label = self._extract_coordinates_from_feature(
-            feature, cleaned_query
-        )
+        if self.is_gh:
+            latitude, longitude, display_label = self._fetch_graphhopper_feature(cleaned_query)
+        else:
+            feature = self._fetch_pelias_feature(cleaned_query)
+            latitude, longitude, display_label = self._extract_coordinates_from_feature(
+                feature, cleaned_query
+            )
 
         cache.set(
             cache_key,
