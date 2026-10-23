@@ -186,7 +186,85 @@ class RouteAnalyzeResponseSerializer(serializers.Serializer):
     routes = serializers.ListField(child=RouteSerializer())
     recommendation = RecommendationSerializer()
     forecast_timeline = serializers.ListField(
-        child=CheckpointTimelineSerializer(), default=list, required=False
+        child=serializers.DictField(), default=list, required=False
     )
     warnings = serializers.ListField(child=serializers.CharField(), default=list)
     provider_errors = serializers.ListField(child=ProviderErrorSerializer(), default=list)
+
+
+class RouteForecastTimelineRequestSerializer(RouteAnalyzeRequestSerializer):
+    hour_offset = serializers.IntegerField(
+        min_value=0,
+        max_value=48,
+        required=False,
+        allow_null=True,
+        default=None,
+        error_messages={
+            "min_value": "hour_offset must be between 0 and 48 inclusive.",
+            "max_value": "hour_offset must be between 0 and 48 inclusive.",
+        },
+    )
+    sample_interval_miles = serializers.FloatField(
+        min_value=5.0, max_value=100.0, required=False, default=25.0
+    )
+    corridor_half_width_miles = serializers.FloatField(
+        min_value=1.0, max_value=50.0, required=False, default=15.0
+    )
+    max_grid_points = serializers.IntegerField(
+        min_value=1, max_value=500, required=False, default=120
+    )
+
+
+class HourlyTimelineEntrySerializer(serializers.Serializer):
+    offset_hours = serializers.IntegerField(min_value=0, max_value=48)
+    forecast_timestamp = serializers.DateTimeField()
+    wind_speed_mph = serializers.FloatField(allow_null=True)
+    rain_in_per_hr = serializers.FloatField(allow_null=True)
+    snow_in_per_hr = serializers.FloatField(allow_null=True)
+    condition_risks = serializers.DictField()
+    weather_risk = serializers.ChoiceField(choices=RISK_LEVEL_CHOICES)
+    load_adjusted_risk = serializers.ChoiceField(choices=RISK_LEVEL_CHOICES)
+    numeric_risk_score = serializers.IntegerField(allow_null=True)
+    availability = serializers.ChoiceField(choices=["available", "unavailable", "beyond_forecast"])
+
+
+class RouteCheckpointTimelineSerializer(serializers.Serializer):
+    checkpoint_id = serializers.CharField()
+    lat = serializers.FloatField()
+    lon = serializers.FloatField()
+    cumulative_distance_miles = serializers.FloatField()
+    timeline = serializers.ListField(child=HourlyTimelineEntrySerializer())
+
+
+class RouteTimelineSerializer(serializers.Serializer):
+    route_id = serializers.CharField()
+    checkpoints = serializers.ListField(child=RouteCheckpointTimelineSerializer())
+
+
+class HeatmapSamplePointSerializer(serializers.Serializer):
+    point_id = serializers.CharField()
+    lat = serializers.FloatField()
+    lon = serializers.FloatField()
+    offset_miles = serializers.FloatField()
+    timeline = serializers.ListField(child=HourlyTimelineEntrySerializer())
+
+
+class CorridorGridSerializer(serializers.Serializer):
+    total_points = serializers.IntegerField()
+    is_capped = serializers.BooleanField()
+    max_points_cap = serializers.IntegerField()
+    sample_interval_miles = serializers.FloatField()
+    corridor_half_width_miles = serializers.FloatField()
+    samples = serializers.ListField(child=HeatmapSamplePointSerializer())
+
+
+class RouteForecastTimelineResponseSerializer(serializers.Serializer):
+    departure_time = serializers.DateTimeField()
+    load_weight_lb = serializers.FloatField()
+    forecast_fetched_at = serializers.DateTimeField()
+    forecast_age_seconds = serializers.IntegerField()
+    hour_offsets = serializers.ListField(child=serializers.IntegerField())
+    routes = serializers.ListField(child=RouteTimelineSerializer())
+    corridor_grid = CorridorGridSerializer()
+    warnings = serializers.ListField(child=serializers.CharField(), default=list)
+    payload_size_bytes = serializers.IntegerField(required=False)
