@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { analyzeRoutes, ApiError } from './routeClient';
+import { analyzeRoutes, fetchForecastTimeline, ApiError } from './routeClient';
 import { RouteAnalyzeRequest } from '../types/api';
-import { MOCK_ROUTE_ANALYSIS_DATA } from '../mock/mockRouteAnalysis';
+import { MOCK_ROUTE_ANALYSIS_DATA, MOCK_FORECAST_TIMELINE_DATA } from '../mock/mockRouteAnalysis';
 
 describe('routeClient', () => {
   const sampleRequest: RouteAnalyzeRequest = {
@@ -98,4 +98,22 @@ describe('routeClient', () => {
       code: 'network_error',
     });
   });
+
+  it('successfully fetches forecast timeline data', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => MOCK_FORECAST_TIMELINE_DATA,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const timeline = await fetchForecastTimeline(sampleRequest);
+    expect(timeline.hour_offsets).toHaveLength(49);
+    expect(timeline.corridor_grid.samples).toHaveLength(6);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/routes/forecast-timeline/'),
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
 });
+

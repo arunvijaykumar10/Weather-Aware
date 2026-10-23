@@ -1,4 +1,9 @@
-import { ApiErrorResponse, RouteAnalyzeRequest, RouteAnalyzeResponse } from '../types/api';
+import {
+  ApiErrorResponse,
+  RouteAnalyzeRequest,
+  RouteAnalyzeResponse,
+  RouteForecastTimelineResponse,
+} from '../types/api';
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -78,3 +83,42 @@ export const analyzeRoutes = async (
 
   return (await response.json()) as RouteAnalyzeResponse;
 };
+
+export const fetchForecastTimeline = async (
+  requestData: RouteAnalyzeRequest & { hour_offset?: number }
+): Promise<RouteForecastTimelineResponse> => {
+  const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const targetUrl = `${apiBaseUrl}/api/routes/forecast-timeline/`;
+
+  let response: Response;
+  try {
+    response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    });
+  } catch (caughtError: unknown) {
+    const errorText = caughtError instanceof Error ? caughtError.message : 'Network error';
+    throw new ApiError(
+      `Cannot connect to backend server at ${apiBaseUrl} (${errorText}). Verify Django is running.`,
+      0,
+      'network_error'
+    );
+  }
+
+  if (!response.ok) {
+    let errorPayload: ApiErrorResponse | null = null;
+    try {
+      errorPayload = (await response.json()) as ApiErrorResponse;
+    } catch {
+      // Non-JSON response handled below.
+    }
+    throw parseErrorPayload(response.status, errorPayload);
+  }
+
+  return (await response.json()) as RouteForecastTimelineResponse;
+};
+

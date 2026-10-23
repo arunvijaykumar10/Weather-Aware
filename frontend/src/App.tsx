@@ -11,8 +11,12 @@ import { RouteMap } from './components/map/RouteMap';
 import { StatusAlerts } from './components/StatusAlerts';
 import { SystemOverviewCards } from './components/SystemOverviewCards';
 import { FooterBar } from './components/FooterBar';
-import { analyzeRoutes, ApiError } from './api/routeClient';
-import { RouteAnalyzeRequest, RouteAnalyzeResponse } from './types/api';
+import { analyzeRoutes, fetchForecastTimeline, ApiError } from './api/routeClient';
+import {
+  RouteAnalyzeRequest,
+  RouteAnalyzeResponse,
+  RouteForecastTimelineResponse,
+} from './types/api';
 
 export const App: React.FC = () => {
   const {
@@ -23,6 +27,9 @@ export const App: React.FC = () => {
   } = useBackendHealth();
 
   const [analysisResult, setAnalysisResult] = useState<RouteAnalyzeResponse | null>(null);
+  const [timelineResult, setTimelineResult] = useState<RouteForecastTimelineResponse | null>(null);
+  const [isTimelineLoading, setIsTimelineLoading] = useState<boolean>(false);
+  const [lastDepartureTime, setLastDepartureTime] = useState<string | undefined>(undefined);
   const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState<string | undefined>(undefined);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -31,12 +38,23 @@ export const App: React.FC = () => {
   const handleAnalyze = async (requestData: RouteAnalyzeRequest) => {
     setIsAnalyzing(true);
     setApiError(null);
+    setLastDepartureTime(requestData.departure_time);
     try {
       const response = await analyzeRoutes(requestData);
       setAnalysisResult(response);
       setSelectedRouteId(
         response.recommendation.recommended_route_id || response.routes[0]?.route_id
       );
+
+      // Asynchronously fetch full 0-48h forecast timeline & corridor heatmap grid
+      setIsTimelineLoading(true);
+      fetchForecastTimeline(requestData)
+        .then((timeline) => setTimelineResult(timeline))
+        .catch((timelineErr) => {
+          // Failure of timeline does not break basic route comparison
+          console.warn('Forecast timeline fetch notice:', timelineErr);
+        })
+        .finally(() => setIsTimelineLoading(false));
     } catch (caughtError: unknown) {
       if (caughtError instanceof ApiError) {
         setApiError(caughtError);
@@ -81,6 +99,9 @@ export const App: React.FC = () => {
                   routes={analysisResult.routes}
                   selectedRouteId={selectedRouteId}
                   selectedCheckpointId={selectedCheckpointId}
+                  timeline={timelineResult}
+                  departureTime={lastDepartureTime}
+                  isLoadingTimeline={isTimelineLoading}
                   onSelectRoute={setSelectedRouteId}
                   onSelectCheckpoint={setSelectedCheckpointId}
                 />

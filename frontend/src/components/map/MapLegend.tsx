@@ -3,7 +3,7 @@ import { Paper, Typography, Stack, Box, Divider } from '@mui/material';
 import { RISK_STYLE_MAP, ROUTE_STYLE_MAP, RiskStyleConfig } from './mapConstants';
 import { RiskLevel } from '../../types/api';
 
-export const MapLegend: React.FC = () => (
+export const MapLegend: React.FC<{ showHeatmap?: boolean }> = ({ showHeatmap = true }) => (
   <Paper
     elevation={1}
     sx={{
@@ -51,5 +51,45 @@ export const MapLegend: React.FC = () => (
         </Stack>
       ))}
     </Stack>
+
+    {showHeatmap && (
+      <>
+        <Divider sx={{ my: 0.75 }} />
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+        >
+          <Typography variant="caption" fontWeight={700}>
+            Heatmap Intensity (0-4 Numeric Risk Score)
+          </Typography>
+          <Typography variant="caption" color="text.secondary" fontStyle="italic">
+            Interpolated between forecast samples
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} flexWrap="wrap" mt={0.5}>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#16a34a' }} />
+            <Typography variant="caption">0: Low</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#d97706' }} />
+            <Typography variant="caption">1: Mod</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ea580c' }} />
+            <Typography variant="caption">2: High</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#dc2626' }} />
+            <Typography variant="caption">3: Severe</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#7f1d1d' }} />
+            <Typography variant="caption">4: No Travel</Typography>
+          </Stack>
+        </Stack>
+      </>
+    )}
   </Paper>
 );

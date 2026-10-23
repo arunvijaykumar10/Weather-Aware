@@ -40,6 +40,21 @@ vi.mock('react-leaflet', async () => {
         },
         children
       ),
+    Circle: ({
+      center,
+      children,
+    }: {
+      center: unknown;
+      children?: React.ReactNode;
+    }) =>
+      React.createElement(
+        'div',
+        {
+          'data-testid': 'leaflet-circle',
+          'data-center': JSON.stringify(center),
+        },
+        children
+      ),
     Popup: ({ children }: { children?: React.ReactNode }) =>
       React.createElement('div', { 'data-testid': 'leaflet-popup' }, children),
     Tooltip: ({ children }: { children?: React.ReactNode }) =>

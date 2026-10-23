@@ -165,6 +165,83 @@ export interface RouteAnalyzeResponse {
 }
 
 /**
+ * Hourly risk forecast entry for a single integer hour offset (0 through 48).
+ */
+export interface HourlyTimelineEntry {
+  offset_hours: number;
+  forecast_timestamp: string;
+  wind_speed_mph: number | null;
+  rain_in_per_hr: number | null;
+  snow_in_per_hr: number | null;
+  condition_risks: {
+    wind: RiskLevel;
+    rain: RiskLevel;
+    snow: RiskLevel;
+  };
+  weather_risk: RiskLevel;
+  load_adjusted_risk: RiskLevel;
+  numeric_risk_score: number | null;
+  availability: 'available' | 'unavailable' | 'beyond_forecast';
+}
+
+/**
+ * Checkpoint 0-48h forecast timeline.
+ */
+export interface RouteCheckpointTimeline {
+  checkpoint_id: string;
+  lat: number;
+  lon: number;
+  cumulative_distance_miles: number;
+  timeline: HourlyTimelineEntry[];
+}
+
+/**
+ * Route timeline containing checkpoints.
+ */
+export interface RouteTimeline {
+  route_id: string;
+  checkpoints: RouteCheckpointTimeline[];
+}
+
+/**
+ * Heatmap grid sample point along or offset perpendicular to the corridor.
+ */
+export interface HeatmapSamplePoint {
+  point_id: string;
+  lat: number;
+  lon: number;
+  offset_miles: number;
+  timeline: HourlyTimelineEntry[];
+}
+
+/**
+ * Heatmap corridor grid containing all sample points.
+ */
+export interface CorridorGrid {
+  total_points: number;
+  is_capped: boolean;
+  max_points_cap: number;
+  sample_interval_miles: number;
+  corridor_half_width_miles: number;
+  samples: HeatmapSamplePoint[];
+}
+
+/**
+ * Response from POST /api/routes/forecast-timeline/
+ */
+export interface RouteForecastTimelineResponse {
+  departure_time: string;
+  load_weight_lb: number;
+  forecast_fetched_at: string;
+  forecast_age_seconds: number;
+  hour_offsets: number[];
+  routes: RouteTimeline[];
+  corridor_grid: CorridorGrid;
+  warnings: string[];
+  payload_size_bytes?: number;
+}
+
+/**
  * Standardized error envelope returned on 400/429/500 API responses.
  */
 export interface ApiErrorResponse {
