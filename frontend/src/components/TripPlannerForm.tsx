@@ -136,17 +136,11 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               size="large"
               disabled={isLoading}
               startIcon={
-                isLoading ? (
-                  <CircularProgress size={20} color="inherit" />
-                ) : (
-                  <NavigationIcon />
-                )
+                isLoading ? <CircularProgress size={20} color="inherit" /> : <NavigationIcon />
               }
               sx={{ px: 4, py: 1.2, fontWeight: 700 }}
             >
-              {isLoading
-                ? 'Calculating Corridors & Weather...'
-                : 'Analyze Driving Corridors'}
+              {isLoading ? 'Calculating Corridors & Weather...' : 'Analyze Driving Corridors'}
             </Button>
           </Grid>
         </Grid>

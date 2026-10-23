@@ -7,6 +7,7 @@ import { useBackendHealth } from './hooks/useBackendHealth';
 import { HeaderBar } from './components/HeaderBar';
 import { TripPlannerForm } from './components/TripPlannerForm';
 import { RouteComparisonSection } from './components/RouteComparisonSection';
+import { RouteMap } from './components/map/RouteMap';
 import { StatusAlerts } from './components/StatusAlerts';
 import { SystemOverviewCards } from './components/SystemOverviewCards';
 import { FooterBar } from './components/FooterBar';
@@ -23,6 +24,7 @@ export const App: React.FC = () => {
 
   const [analysisResult, setAnalysisResult] = useState<RouteAnalyzeResponse | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
+  const [selectedCheckpointId, setSelectedCheckpointId] = useState<string | undefined>(undefined);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [apiError, setApiError] = useState<ApiError | null>(null);
 
@@ -74,11 +76,20 @@ export const App: React.FC = () => {
             <StatusAlerts apiError={apiError} onClearError={() => setApiError(null)} />
 
             {analysisResult && (
-              <RouteComparisonSection
-                analysis={analysisResult}
-                selectedRouteId={selectedRouteId}
-                onSelectRoute={setSelectedRouteId}
-              />
+              <>
+                <RouteMap
+                  routes={analysisResult.routes}
+                  selectedRouteId={selectedRouteId}
+                  selectedCheckpointId={selectedCheckpointId}
+                  onSelectRoute={setSelectedRouteId}
+                  onSelectCheckpoint={setSelectedCheckpointId}
+                />
+                <RouteComparisonSection
+                  analysis={analysisResult}
+                  selectedRouteId={selectedRouteId}
+                  onSelectRoute={setSelectedRouteId}
+                />
+              </>
             )}
 
             {!analysisResult && <SystemOverviewCards />}
