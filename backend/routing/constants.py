@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 # The public OpenRouteService instance caps alternative routes at 100 km; 90 km provides a safety margin.
 NATIVE_ALTERNATIVES_THRESHOLD_KM = 90.0
@@ -44,6 +45,23 @@ ORS_GEOCODE_ENDPOINT = os.environ.get(
     "ORS_GEOCODE_ENDPOINT",
     "https://api.heigit.org/pelias/v1/search",
 )
+
+# GraphHopper fallback endpoints
+GRAPHHOPPER_ROUTE_ENDPOINT = os.environ.get(
+    "GRAPHHOPPER_ROUTE_ENDPOINT", "https://graphhopper.com/api/1/route"
+)
+GRAPHHOPPER_GEOCODE_ENDPOINT = os.environ.get(
+    "GRAPHHOPPER_GEOCODE_ENDPOINT", "https://graphhopper.com/api/1/geocode"
+)
+
+
+def is_graphhopper_key(key: Optional[str]) -> bool:
+    """Return True if the key matches the GraphHopper 36-character UUID format."""
+    if not key or not isinstance(key, str):
+        return False
+    stripped = key.strip()
+    return len(stripped) == 36 and stripped.count("-") == 4
+
 
 GEOCODE_CACHE_TTL_SECONDS = 86400 * 7
 

@@ -8,11 +8,13 @@ import requests
 from .checkpoint_service import CheckpointService
 from .constants import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    GRAPHHOPPER_ROUTE_ENDPOINT,
     MAX_DETOUR_RATIO,
     MAX_LATERAL_CANDIDATE_CALLS,
     MAX_OVERLAP_SHARE_RATIO,
     NATIVE_ALTERNATIVES_THRESHOLD_KM,
     ORS_DIRECTIONS_ENDPOINT,
+    is_graphhopper_key,
 )
 from .errors import (
     NoRouteFoundError,
@@ -46,7 +48,29 @@ class RoutingService:
         geocoding_service: Optional[GeocodingService] = None,
         session: Optional[requests.Session] = None,
     ):
-        self.api_key = api_key or os.environ.get("OPENROUTESERVICE_API_KEY", "")
+        ors_key = os.environ.get("OPENROUTESERVICE_API_KEY", "").strip()
+        gh_key = os.environ.get("GRAPHHOPPER_API_KEY", "").strip()
+        routing_provider = os.environ.get("ROUTING_PROVIDER", "").strip().lower()
+
+        if api_key is not None:
+            self.api_key = api_key
+            self.is_gh = is_graphhopper_key(api_key) or routing_provider == "graphhopper"
+        elif routing_provider == "graphhopper" and gh_key:
+            self.api_key = gh_key
+            self.is_gh = True
+        elif routing_provider == "openrouteservice" and ors_key:
+            self.api_key = ors_key
+            self.is_gh = False
+        elif is_graphhopper_key(ors_key):
+            self.api_key = ors_key
+            self.is_gh = True
+        elif gh_key and (not ors_key or is_graphhopper_key(gh_key)):
+            self.api_key = gh_key
+            self.is_gh = True
+        else:
+            self.api_key = ors_key
+            self.is_gh = False
+
         self.session = session or requests.Session()
         self.geocoder = geocoding_service or GeocodingService(
             api_key=self.api_key, session=self.session
@@ -127,6 +151,91 @@ class RoutingService:
             raise NoRouteFoundError("ORS returned 200 OK with zero route features.")
 
         return response_body
+
+    def _call_graphhopper_directions(
+        self,
+        origin_lon_lat: List[float],
+        dest_lon_lat: List[float],
+        departure_time_iso: str,
+        checkpoint_interval_miles: int,
+    ) -> List[Dict[str, Any]]:
+        key = self.api_key or os.environ.get("GRAPHHOPPER_API_KEY", "")
+        if not key:
+            raise ProviderAuthError(
+                "GRAPHHOPPER_API_KEY is not configured. Please supply an API key in .env."
+            )
+        params = [
+            ("point", f"{origin_lon_lat[1]},{origin_lon_lat[0]}"),
+            ("point", f"{dest_lon_lat[1]},{dest_lon_lat[0]}"),
+            ("profile", "car"),
+            ("algorithm", "alternative_route"),
+            ("alternative_route.max_paths", 3),
+            ("points_encoded", "false"),
+            ("key", key),
+        ]
+        try:
+            resp = self.session.get(
+                GRAPHHOPPER_ROUTE_ENDPOINT,
+                params=params,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.exceptions.Timeout as timeout_err:
+            raise ProviderTimeoutError("GraphHopper routing request timed out.") from timeout_err
+        except requests.exceptions.RequestException as net_err:
+            raise RoutingServiceError(f"Network error calling GraphHopper: {net_err}") from net_err
+
+        if resp.status_code == 429:
+            raise ProviderRateLimitError("GraphHopper rate limit exceeded (429).")
+        if resp.status_code in (401, 403):
+            raise ProviderAuthError("GraphHopper rejected credentials (401/403).")
+        if not resp.ok:
+            raise RoutingServiceError(f"GraphHopper error {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
+        paths = data.get("paths", [])
+        if not paths:
+            raise NoRouteFoundError("No driving route found by GraphHopper.")
+
+        corridors: List[Dict[str, Any]] = []
+        route_ids = ["route_primary", "route_alt_1", "route_alt_2"]
+
+        for idx, path in enumerate(paths[:3]):
+            route_id = route_ids[idx] if idx < len(route_ids) else f"route_alt_{idx}"
+            geojson_coords = path["points"]["coordinates"]
+            leaflet_geometry = convert_geojson_lon_lat_to_leaflet_lat_lon(geojson_coords)
+            distance_meters = float(path["distance"])
+            duration_seconds = float(path["time"]) / 1000.0
+            distance_miles = convert_meters_to_miles(distance_meters)
+            duration_minutes = convert_seconds_to_minutes(duration_seconds)
+
+            checkpoints, cp_warnings = CheckpointService.generate_checkpoints(
+                route_id=route_id,
+                geometry_lat_lon=leaflet_geometry,
+                total_distance_miles=distance_miles,
+                total_duration_minutes=duration_minutes,
+                departure_time=departure_time_iso,
+                interval_miles=checkpoint_interval_miles,
+            )
+
+            corridors.append(
+                {
+                    "route_id": route_id,
+                    "provider_summary": (
+                        f"Commercial Corridor {idx + 1}: {distance_miles:.1f} mi, "
+                        f"{duration_minutes:.0f} min"
+                    ),
+                    "geometry": leaflet_geometry,
+                    "distance_miles": distance_miles,
+                    "duration_minutes": duration_minutes,
+                    "checkpoints": checkpoints,
+                    "metrics": {},
+                    "eligibility": {"is_eligible": True, "ineligibility_reasons": []},
+                    "_meters": distance_meters,
+                    "_seconds": duration_seconds,
+                }
+            )
+
+        return corridors
 
     def _normalize_feature_to_route(
         self,
@@ -351,58 +460,69 @@ class RoutingService:
         dest_lon_lat = [dest_lon, dest_lat]
         air_distance_km = haversine_distance_km(origin_lat, origin_lon, dest_lat, dest_lon)
 
-        raw_features, used_native = self._fetch_raw_corridors(
-            origin_lon_lat, dest_lon_lat, air_distance_km
-        )
-
-        primary_corridor, primary_warnings = self._normalize_feature_to_route(
-            raw_features[0],
-            route_id="route_primary",
-            summary_label=f"Primary corridor from {origin_label} to {dest_label}",
-            departure_time_iso=departure_time_iso,
-            checkpoint_interval_miles=checkpoint_interval_miles,
-        )
-
-        corridor_bundle: List[Dict[str, Any]] = [primary_corridor]
-        operational_warnings: List[str] = list(primary_warnings)
-
-        if used_native and len(raw_features) > 1:
-            for alt_idx, feature_item in enumerate(raw_features[1:], start=1):
-                alt_corridor, alt_warnings = self._normalize_feature_to_route(
-                    feature_item,
-                    route_id=f"route_alt_{alt_idx}",
-                    summary_label=f"Alternative corridor {alt_idx}",
-                    departure_time_iso=departure_time_iso,
-                    checkpoint_interval_miles=checkpoint_interval_miles,
-                )
-                operational_warnings.extend(
-                    [w for w in alt_warnings if w not in operational_warnings]
-                )
-                if (
-                    alt_corridor["_meters"] / max(1.0, primary_corridor["_meters"])
-                ) <= MAX_DETOUR_RATIO:
-                    if (
-                        compute_geometry_overlap_ratio(
-                            alt_corridor["geometry"], primary_corridor["geometry"]
-                        )
-                        <= MAX_OVERLAP_SHARE_RATIO
-                    ):
-                        corridor_bundle.append(alt_corridor)
-        else:
-            primary_km = primary_corridor["_meters"] / 1000.0
-            candidate_corridors = self._generate_candidate_corridors_via_waypoints(
+        if self.is_gh:
+            corridor_bundle = self._call_graphhopper_directions(
                 origin_lon_lat=origin_lon_lat,
-                destination_lon_lat=dest_lon_lat,
-                primary_route=primary_corridor,
-                primary_distance_km=primary_km,
+                dest_lon_lat=dest_lon_lat,
                 departure_time_iso=departure_time_iso,
                 checkpoint_interval_miles=checkpoint_interval_miles,
             )
-            corridor_bundle.extend(candidate_corridors)
-            if candidate_corridors:
-                operational_warnings.append(
-                    "Long-distance route: alternative paths were derived via lateral corridor bypasses."
+            operational_warnings: List[str] = [
+                "Driving corridors retrieved via GraphHopper provider."
+            ]
+        else:
+            raw_features, used_native = self._fetch_raw_corridors(
+                origin_lon_lat, dest_lon_lat, air_distance_km
+            )
+
+            primary_corridor, primary_warnings = self._normalize_feature_to_route(
+                raw_features[0],
+                route_id="route_primary",
+                summary_label=f"Primary corridor from {origin_label} to {dest_label}",
+                departure_time_iso=departure_time_iso,
+                checkpoint_interval_miles=checkpoint_interval_miles,
+            )
+
+            corridor_bundle = [primary_corridor]
+            operational_warnings = list(primary_warnings)
+
+            if used_native and len(raw_features) > 1:
+                for alt_idx, feature_item in enumerate(raw_features[1:], start=1):
+                    alt_corridor, alt_warnings = self._normalize_feature_to_route(
+                        feature_item,
+                        route_id=f"route_alt_{alt_idx}",
+                        summary_label=f"Alternative corridor {alt_idx}",
+                        departure_time_iso=departure_time_iso,
+                        checkpoint_interval_miles=checkpoint_interval_miles,
+                    )
+                    operational_warnings.extend(
+                        [w for w in alt_warnings if w not in operational_warnings]
+                    )
+                    if (
+                        alt_corridor["_meters"] / max(1.0, primary_corridor["_meters"])
+                    ) <= MAX_DETOUR_RATIO:
+                        if (
+                            compute_geometry_overlap_ratio(
+                                alt_corridor["geometry"], primary_corridor["geometry"]
+                            )
+                            <= MAX_OVERLAP_SHARE_RATIO
+                        ):
+                            corridor_bundle.append(alt_corridor)
+            else:
+                primary_km = primary_corridor["_meters"] / 1000.0
+                candidate_corridors = self._generate_candidate_corridors_via_waypoints(
+                    origin_lon_lat=origin_lon_lat,
+                    destination_lon_lat=dest_lon_lat,
+                    primary_route=primary_corridor,
+                    primary_distance_km=primary_km,
+                    departure_time_iso=departure_time_iso,
+                    checkpoint_interval_miles=checkpoint_interval_miles,
                 )
+                corridor_bundle.extend(candidate_corridors)
+                if candidate_corridors:
+                    operational_warnings.append(
+                        "Long-distance route: alternative paths were derived via lateral corridor bypasses."
+                    )
 
         weather_warnings = WeatherService.enrich_corridors_with_weather(
             corridor_bundle,
