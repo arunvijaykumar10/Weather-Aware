@@ -3,6 +3,8 @@ Configuration constants and mathematical thresholds for OpenRouteService routing
 alternative corridor derivation, and coordinate conversions.
 """
 
+import os
+
 # Distance threshold: requests under 90 km can attempt native ORS alternatives.
 # Requests >= 90 km (or whenever ORS returns error 2004) use lateral via-waypoint fallback.
 NATIVE_ALTERNATIVES_THRESHOLD_KM = 90.0
@@ -25,10 +27,16 @@ OVERLAP_BUFFER_KM = 5.0            # Spatial tolerance buffer (km) when checking
 METERS_TO_MILES = 0.000621371192
 SECONDS_TO_MINUTES = 1.0 / 60.0
 
-# OpenRouteService API endpoints
-ORS_BASE_URL = "https://api.openrouteservice.org"
-ORS_DIRECTIONS_ENDPOINT = "https://api.openrouteservice.org/v2/directions/driving-hgv/geojson"
-ORS_GEOCODE_ENDPOINT = "https://api.openrouteservice.org/geocode/search"
+# OpenRouteService API endpoints (HeiGIT unified gateway infrastructure)
+ORS_BASE_URL = os.environ.get("ORS_BASE_URL", "https://api.heigit.org")
+ORS_DIRECTIONS_ENDPOINT = os.environ.get(
+    "ORS_DIRECTIONS_ENDPOINT",
+    "https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson"
+)
+ORS_GEOCODE_ENDPOINT = os.environ.get(
+    "ORS_GEOCODE_ENDPOINT",
+    "https://api.heigit.org/pelias/v1/search"
+)
 
 # Caching TTL for geocoded locations (7 days)
 GEOCODE_CACHE_TTL_SECONDS = 86400 * 7

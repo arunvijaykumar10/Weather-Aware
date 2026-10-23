@@ -19,7 +19,7 @@ def test_health_check_endpoint():
 
 def test_cors_headers_on_health_endpoint():
     client = APIClient()
-    response = client.get('/api/health/', HTTP_ORIGIN='http://localhost:5173')
+    response = client.get('/api/health/', HTTP_ORIGIN='http://localhost:8080')
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.headers.get('Access-Control-Allow-Origin') == 'http://localhost:5173'
+    assert response.headers.get('Access-Control-Allow-Origin') == 'http://localhost:8080'

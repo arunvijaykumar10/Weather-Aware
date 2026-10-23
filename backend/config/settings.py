@@ -129,9 +129,12 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'routing.exceptions.custom_exception_handler',
 }
 
-# Local CORS configuration - only allow frontend origin
-frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:5173')
+# Local CORS configuration - allow frontend origin (default: localhost:8080)
+frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8080')
 CORS_ALLOWED_ORIGINS = [
     frontend_origin,
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:5173',
     'http://127.0.0.1:5173',
 ]

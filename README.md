@@ -187,7 +187,7 @@ cp .env.example .env
    ```bash
    npm run dev
    ```
-   The frontend web application will be accessible at `http://localhost:5173`.
+   The frontend web application will be accessible at `http://localhost:8080`.
 
 ---
 
