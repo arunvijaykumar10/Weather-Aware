@@ -1,19 +1,16 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
+from .routing_service import RoutingService
 from .serializers import (
     RouteAnalyzeRequestSerializer,
     RouteAnalyzeResponseSerializer,
 )
-from .routing_service import RoutingService
 
 
 class HealthCheckView(APIView):
-    """
-    Health check endpoint to verify backend service readiness and status.
-    """
     def get(self, request, *args, **kwargs):
         return Response(
             {
@@ -25,35 +22,24 @@ class HealthCheckView(APIView):
 
 
 class RouteAnalyzeView(APIView):
-    """
-    Main endpoint for analyzing driving routes and weather-aware risks:
-    POST /api/routes/analyze/
-
-    Protected by DRF scoped rate throttling to prevent upstream provider quota exhaustion.
-    """
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'route_analysis'
+    throttle_scope = "route_analysis"
 
     def post(self, request, *args, **kwargs):
-        # 1. Validate request payload against strict contract
-        req_serializer = RouteAnalyzeRequestSerializer(data=request.data)
-        req_serializer.is_valid(raise_exception=True)
-        validated_data = req_serializer.validated_data
+        request_serializer = RouteAnalyzeRequestSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        validated_parameters = request_serializer.validated_data
 
-        departure_time_iso = validated_data['departure_time'].isoformat()
-
-        # 2. Invoke routing service for geocoding and corridor generation
         routing_service = RoutingService()
-        analysis_result = routing_service.analyze_routes(
-            origin=validated_data['origin'],
-            destination=validated_data['destination'],
-            departure_time_iso=departure_time_iso,
-            load_weight_lb=validated_data['load_weight_lb'],
-            checkpoint_interval_miles=validated_data['checkpoint_interval_miles'],
+        route_assessment = routing_service.analyze_routes(
+            origin=validated_parameters["origin"],
+            destination=validated_parameters["destination"],
+            departure_time_iso=validated_parameters["departure_time"].isoformat(),
+            load_weight_lb=validated_parameters["load_weight_lb"],
+            checkpoint_interval_miles=validated_parameters["checkpoint_interval_miles"],
         )
 
-        # 3. Validate serialized output matches the typed response schema
-        res_serializer = RouteAnalyzeResponseSerializer(data=analysis_result)
-        res_serializer.is_valid(raise_exception=True)
+        response_serializer = RouteAnalyzeResponseSerializer(data=route_assessment)
+        response_serializer.is_valid(raise_exception=True)
 
-        return Response(res_serializer.data, status=status.HTTP_200_OK)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)

@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  RouteAnalyzeRequest,
-  RouteAnalyzeResponse,
-  RiskLevel,
-  WeatherAvailability,
-} from './api';
+import { RouteAnalyzeRequest, RouteAnalyzeResponse, RiskLevel, WeatherAvailability } from './api';
 
 describe('API Contract Types', () => {
   it('validates TypeScript shapes against a full response fixture', () => {

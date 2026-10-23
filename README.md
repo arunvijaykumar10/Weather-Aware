@@ -32,7 +32,22 @@ A full-stack intelligent routing platform designed to calculate driving routes f
 - **Quota Cap**: Extra candidate routing calls are capped at a maximum of 4 calls per request. Geocoding queries are cached locally for 7 days.
 - **Vehicle Weight vs Dimensions**: The request payload includes `load_weight_lb` (cargo payload weight). Because physical vehicle dimensions (height, width, axle count) are not collected, artificial dimension caps are not passed to ORS to avoid unintended routing failures. `load_weight_lb` is reserved for backend weather risk calculations (crosswind rollover vulnerability).
 
-### 2. Main Analysis API Contract: `POST /api/routes/analyze/`
+### 3. Checkpoint Generation & ETA Propagation
+- **Equidistant Sampling Along Actual Geometry**: Checkpoints are sampled along the true polyline geometry using Haversine segment lengths rather than straight-line distance.
+- **Geometry Distance Scaling**: Raw polyline vertex distances are scaled by $\alpha = \text{total\_distance\_miles} / L_{\text{raw}}$ so the final destination checkpoint's cumulative mileage matches the provider's authoritative distance exactly.
+- **Origin & Destination Inclusion**: Checkpoint 0 is always the route origin ($D = 0.0$ mi), and the final checkpoint is always the destination ($D = \text{total\_distance\_miles}$). Potential duplicate endpoints on boundary conditions are eliminated via a minimum distance threshold ($0.5$ mi).
+- **Proportional ETA Calculation**: Arrival ETAs at each checkpoint are estimated via proportional progress:
+  $$\text{ETA}(D) = T_{\text{departure\_UTC}} + \left(\frac{D}{\text{Total Distance}}\right) \times \text{Total Duration}$$
+- **ETA Approximation Limitations**:
+  1. *Uniform Speed Assumption*: Assumes linear progress based on provider's estimated total duration without intra-trip speed variations.
+  2. *No Live Traffic Fluctuations*: Does not model spontaneous traffic jams, lane closures, or rush-hour delays.
+  3. *No Hours-of-Service (HOS) Rest Breaks*: Commercial trucking regulations (e.g., US FMCSA 11-hour driving limit, 30-minute rest after 8 hours) are not automatically inserted into ETA timelines.
+  4. *No Grade or Weather Drag*: Does not model vehicle slowdowns on steep mountain grades (e.g. Rocky Mountains) or speed reductions from driving through severe rain/snow.
+- **Safety Limit & Adaptive Sampling**:
+  - Capped at `MAX_CHECKPOINTS_SAFETY_LIMIT = 100` checkpoints per route corridor.
+  - If a very long route (e.g. 3,000 miles) at a small interval (10 miles) exceeds 100 checkpoints, the sampling interval is automatically adapted to a safe interval (e.g. 50 miles) and an informative warning is returned. Checkpoints are **never silently truncated**.
+
+### 4. Main Analysis API Contract: `POST /api/routes/analyze/`
 - **Throttling**: Enforced via DRF `ScopedRateThrottle` (`route_analysis: 30/minute`) to preserve external provider quotas and prevent denial-of-service.
 - **Error Handling**: Standardized error envelope on all 4xx/5xx responses:
   ```json

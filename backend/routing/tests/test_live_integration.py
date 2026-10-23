@@ -1,11 +1,13 @@
 import os
+
 import pytest
+
 from routing.routing_service import RoutingService
 
 
 @pytest.mark.skipif(
-    not os.environ.get('RUN_LIVE_ORS_TESTS') or not os.environ.get('OPENROUTESERVICE_API_KEY'),
-    reason="Live integration test skipped unless RUN_LIVE_ORS_TESTS=1 and OPENROUTESERVICE_API_KEY is set."
+    not os.environ.get("RUN_LIVE_ORS_TESTS") or not os.environ.get("OPENROUTESERVICE_API_KEY"),
+    reason="Live integration test skipped unless RUN_LIVE_ORS_TESTS=1 and OPENROUTESERVICE_API_KEY is set.",
 )
 def test_live_ors_300_plus_mile_route():
     """

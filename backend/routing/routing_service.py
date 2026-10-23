@@ -1,40 +1,35 @@
-"""
-Core routing service module integrating OpenRouteService (driving-hgv)
-with lateral via-waypoint alternative corridor generation, detour filtering,
-and geometric overlap deduplication.
-"""
-
-import os
 import logging
-import requests
-from typing import List, Dict, Any, Optional, Tuple
+import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
+from .checkpoint_service import CheckpointService
 from .constants import (
-    ORS_DIRECTIONS_ENDPOINT,
-    NATIVE_ALTERNATIVES_THRESHOLD_KM,
-    MAX_LATERAL_CANDIDATE_CALLS,
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
     MAX_DETOUR_RATIO,
+    MAX_LATERAL_CANDIDATE_CALLS,
     MAX_OVERLAP_SHARE_RATIO,
-    DEFAULT_REQUEST_TIMEOUT,
-)
-from .geo_utils import (
-    convert_meters_to_miles,
-    convert_seconds_to_minutes,
-    convert_geojson_coords_to_lat_lon,
-    convert_lat_lon_to_geojson_coords,
-    haversine_distance_km,
-    scale_lateral_offset_km,
-    compute_lateral_waypoint,
-    compute_geometry_overlap_ratio,
+    NATIVE_ALTERNATIVES_THRESHOLD_KM,
+    ORS_DIRECTIONS_ENDPOINT,
 )
 from .errors import (
-    RoutingServiceError,
     NoRouteFoundError,
-    ProviderRateLimitError,
     ProviderAuthError,
-    ProviderTimeoutError,
+    ProviderRateLimitError,
     ProviderSnappingError,
+    ProviderTimeoutError,
+    RoutingServiceError,
+)
+from .geo_math import (
+    compute_geometry_overlap_ratio,
+    compute_lateral_waypoint,
+    convert_geojson_lon_lat_to_leaflet_lat_lon,
+    convert_meters_to_miles,
+    convert_seconds_to_minutes,
+    haversine_distance_km,
+    scale_lateral_offset_km,
 )
 from .geocoding_service import GeocodingService
 
@@ -48,11 +43,10 @@ class RoutingService:
         geocoding_service: Optional[GeocodingService] = None,
         session: Optional[requests.Session] = None,
     ):
-        self.api_key = api_key or os.environ.get('OPENROUTESERVICE_API_KEY', '')
+        self.api_key = api_key or os.environ.get("OPENROUTESERVICE_API_KEY", "")
         self.session = session or requests.Session()
         self.geocoder = geocoding_service or GeocodingService(
-            api_key=self.api_key,
-            session=self.session
+            api_key=self.api_key, session=self.session
         )
 
     def _call_ors_directions(
@@ -60,270 +54,284 @@ class RoutingService:
         coordinates_lon_lat: List[List[float]],
         alternative_routes: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Execute POST request to OpenRouteService driving-hgv GeoJSON endpoint.
-        Uses Authorization header and sanitizes logging.
-        """
         if not self.api_key:
-            raise ProviderAuthError(
-                "OPENROUTESERVICE_API_KEY is not configured. Please supply an API key in .env."
-            )
+            raise ProviderAuthError("OPENROUTESERVICE_API_KEY is not configured.")
 
-        headers = {
+        request_headers = {
             "Authorization": self.api_key,
             "Content-Type": "application/json",
             "Accept": "application/geo+json, application/json",
         }
 
-        # NOTE on vehicle parameters:
-        # ORS driving-hgv allows vehicle dimensions (height, width, length, axleload).
-        # Because the user request provides cargo load_weight_lb without physical vehicle dimensions,
-        # we deliberately do not pass artificial dimension limits to ORS to prevent unwarranted
-        # routing rejections. load_weight_lb is preserved for backend weather rollover risk analysis.
-        payload: Dict[str, Any] = {
+        # The request supplies cargo weight without physical vehicle dimensions (height/width/axles).
+        # We omit artificial dimension restrictions here to prevent false-positive routing rejections;
+        # weight is evaluated in the backend for crosswind and rollover vulnerabilities.
+        request_body: Dict[str, Any] = {
             "coordinates": coordinates_lon_lat,
             "instructions": False,
             "preference": "recommended",
         }
         if alternative_routes:
-            payload["alternative_routes"] = alternative_routes
+            request_body["alternative_routes"] = alternative_routes
 
         try:
-            resp = self.session.post(
+            http_response = self.session.post(
                 ORS_DIRECTIONS_ENDPOINT,
-                headers=headers,
-                json=payload,
-                timeout=DEFAULT_REQUEST_TIMEOUT,
+                headers=request_headers,
+                json=request_body,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
             )
-        except requests.exceptions.Timeout as e:
-            logger.warning("ORS directions request timed out.")
-            raise ProviderTimeoutError("Upstream routing provider timed out.") from e
-        except requests.exceptions.RequestException as e:
-            logger.error("Network error communicating with ORS: %s", str(e))
-            raise RoutingServiceError(f"Network error during route request: {str(e)}") from e
+        except requests.exceptions.Timeout as timeout_error:
+            raise ProviderTimeoutError("Upstream routing provider timed out.") from timeout_error
+        except requests.exceptions.RequestException as network_error:
+            raise RoutingServiceError(
+                f"Network error during route request: {network_error}"
+            ) from network_error
 
-        if resp.status_code == 429:
+        return self._handle_ors_response_status(http_response)
+
+    def _handle_ors_response_status(self, http_response: requests.Response) -> Dict[str, Any]:
+        if http_response.status_code == 429:
             raise ProviderRateLimitError("OpenRouteService rate limit exceeded (429).")
-        if resp.status_code in (401, 403):
-            raise ProviderAuthError("OpenRouteService rejected credentials (401/403 Unauthorized).")
+        if http_response.status_code in (401, 403):
+            raise ProviderAuthError("OpenRouteService rejected credentials (401/403).")
 
-        data = resp.json() if resp.text else {}
+        response_body = http_response.json() if http_response.text else {}
+        if not http_response.ok:
+            error_payload = response_body.get("error", {})
+            error_code = error_payload.get("code") if isinstance(error_payload, dict) else None
+            error_message = (
+                error_payload.get("message", "")
+                if isinstance(error_payload, dict)
+                else str(error_payload)
+            )
 
-        if not resp.ok:
-            error_obj = data.get('error', {})
-            error_code = error_obj.get('code') if isinstance(error_obj, dict) else None
-            error_msg = error_obj.get('message', '') if isinstance(error_obj, dict) else str(error_obj)
-
-            # Error 2004: Request exceeds server configuration limits (e.g. 100km alternative routes cap)
             if error_code == 2004:
-                raise RoutingServiceError("ORS limits exceeded (2004)", code="distance_limit_exceeded")
-
-            # Error 2010: Waypoint cannot snap to road network
-            if error_code == 2010 or "could not find point" in error_msg.lower():
-                raise ProviderSnappingError(f"Waypoint could not be snapped: {error_msg}")
-
-            # Error 2099 or empty route
-            if resp.status_code == 404 or "no route found" in error_msg.lower():
-                raise NoRouteFoundError(f"No route found between coordinates: {error_msg}")
+                raise RoutingServiceError(
+                    "ORS distance limits exceeded (2004)", code="distance_limit_exceeded"
+                )
+            if error_code == 2010 or "could not find point" in error_message.lower():
+                raise ProviderSnappingError(f"Waypoint snapping failed: {error_message}")
+            if http_response.status_code == 404 or "no route found" in error_message.lower():
+                raise NoRouteFoundError(f"No route found between coordinates: {error_message}")
 
             raise RoutingServiceError(
-                f"ORS error (HTTP {resp.status_code}): {error_msg}",
-                code=f"ors_http_{resp.status_code}"
+                f"ORS error (HTTP {http_response.status_code}): {error_message}",
+                code=f"ors_http_{http_response.status_code}",
             )
 
-        features = data.get('features', [])
-        if not features:
-            raise NoRouteFoundError("ORS returned 200 OK but with 0 route features.")
+        if not response_body.get("features", []):
+            raise NoRouteFoundError("ORS returned 200 OK with zero route features.")
 
-        return data
+        return response_body
 
     def _normalize_feature_to_route(
         self,
-        feature: Dict[str, Any],
+        route_feature: Dict[str, Any],
         route_id: str,
-        summary_override: Optional[str] = None,
+        summary_label: str,
         departure_time_iso: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Normalize an ORS GeoJSON route feature into the application's contract schema."""
-        properties = feature.get('properties', {})
-        summary = properties.get('summary', {})
-        meters = float(summary.get('distance', 0.0))
-        seconds = float(summary.get('duration', 0.0))
+        checkpoint_interval_miles: int = 25,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        feature_summary = route_feature.get("properties", {}).get("summary", {})
+        distance_meters = float(feature_summary.get("distance", 0.0))
+        duration_seconds = float(feature_summary.get("duration", 0.0))
 
-        distance_miles = convert_meters_to_miles(meters)
-        duration_minutes = convert_seconds_to_minutes(seconds)
+        distance_miles = convert_meters_to_miles(distance_meters)
+        duration_minutes = convert_seconds_to_minutes(duration_seconds)
+        geometry_lat_lon = convert_geojson_lon_lat_to_leaflet_lat_lon(
+            route_feature.get("geometry", {}).get("coordinates", [])
+        )
 
-        geojson_geometry = feature.get('geometry', {}).get('coordinates', [])
-        lat_lon_geometry = convert_geojson_coords_to_lat_lon(geojson_geometry)
+        iso_departure = departure_time_iso or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        checkpoints, interval_warnings = CheckpointService.generate_checkpoints(
+            route_id=route_id,
+            geometry_lat_lon=geometry_lat_lon,
+            total_distance_miles=distance_miles,
+            total_duration_minutes=duration_minutes,
+            departure_time=iso_departure,
+            interval_miles=checkpoint_interval_miles,
+        )
 
-        provider_summary = summary_override or "OpenRouteService driving-hgv corridor"
-
-        # Checkpoints sampling placeholder for Task 3 (full weather scoring in subsequent tasks)
-        iso_now = departure_time_iso or datetime.utcnow().isoformat() + "Z"
-        first_coord = lat_lon_geometry[0] if lat_lon_geometry else [0.0, 0.0]
-
-        checkpoints = [
-            {
-                "checkpoint_id": f"{route_id}_cp_0",
-                "lat": first_coord[0],
-                "lon": first_coord[1],
-                "cumulative_distance_miles": 0.0,
-                "eta": iso_now,
-                "forecast_timestamp": iso_now,
-                "weather": {
-                    "wind_speed_mph": None,
-                    "wind_speed_availability": "missing",
-                    "rain_in_per_hr": None,
-                    "rain_availability": "missing",
-                    "snow_in_per_hr": None,
-                    "snow_availability": "missing",
-                },
-                "condition_risks": {
-                    "wind_risk": "low",
-                    "rain_risk": "low",
-                    "snow_risk": "low",
-                },
-                "weather_risk": "low",
-                "load_adjusted_risk": "low",
-                "load_rule_applied": None,
-            }
-        ]
-
-        metrics = {
-            "miles_per_risk_category": {
-                "low": distance_miles,
-                "moderate": 0.0,
-                "high": 0.0,
-                "severe": 0.0,
-                "no_travel": 0.0,
-                "unknown": 0.0,
-            },
-            "severe_miles": 0.0,
-            "high_miles": 0.0,
-            "no_travel_miles": 0.0,
-            "unknown_miles": 0.0,
-            "average_risk": "low",
-            "has_no_travel_segment": False,
-            "forecast_coverage_pct": 100.0,
-        }
-
-        eligibility = {
-            "is_eligible": True,
-            "ineligibility_reasons": [],
-        }
-
-        return {
+        route_record = {
             "route_id": route_id,
-            "provider_summary": provider_summary,
-            "geometry": lat_lon_geometry,
+            "provider_summary": summary_label,
+            "geometry": geometry_lat_lon,
             "distance_miles": distance_miles,
             "duration_minutes": duration_minutes,
             "checkpoints": checkpoints,
-            "metrics": metrics,
-            "eligibility": eligibility,
-            "_meters": meters,
-            "_seconds": seconds,
+            "metrics": {
+                "miles_per_risk_category": {
+                    "low": distance_miles,
+                    "moderate": 0.0,
+                    "high": 0.0,
+                    "severe": 0.0,
+                    "no_travel": 0.0,
+                    "unknown": 0.0,
+                },
+                "severe_miles": 0.0,
+                "high_miles": 0.0,
+                "no_travel_miles": 0.0,
+                "unknown_miles": 0.0,
+                "average_risk": "low",
+                "has_no_travel_segment": False,
+                "forecast_coverage_pct": 100.0,
+            },
+            "eligibility": {"is_eligible": True, "ineligibility_reasons": []},
+            "_meters": distance_meters,
+            "_seconds": duration_seconds,
         }
+        return route_record, interval_warnings
+
+    def _derive_candidate_waypoints(
+        self,
+        primary_geometry_lat_lon: List[List[float]],
+        primary_distance_km: float,
+    ) -> List[Tuple[Tuple[float, float], str]]:
+        point_count = len(primary_geometry_lat_lon)
+        if point_count < 10:
+            return []
+
+        lateral_offset_km = scale_lateral_offset_km(primary_distance_km)
+        index_early = max(1, int(point_count * 0.30))
+        index_late = min(point_count - 2, int(point_count * 0.65))
+
+        sampling_targets = [
+            (index_early, "left", "Alternative Corridor via North/West deviation"),
+            (index_early, "right", "Alternative Corridor via South/East deviation"),
+            (index_late, "left", "Alternative Corridor via Upper regional bypass"),
+            (index_late, "right", "Alternative Corridor via Lower regional bypass"),
+        ]
+
+        candidate_waypoints: List[Tuple[Tuple[float, float], str]] = []
+        for segment_idx, lateral_side, label in sampling_targets:
+            point_a = primary_geometry_lat_lon[segment_idx]
+            point_b = primary_geometry_lat_lon[segment_idx + 1]
+            try:
+                waypoint_coords = compute_lateral_waypoint(
+                    point_a[0],
+                    point_a[1],
+                    point_b[0],
+                    point_b[1],
+                    offset_distance_km=lateral_offset_km,
+                    lateral_side=lateral_side,
+                )
+                candidate_waypoints.append((waypoint_coords, label))
+            except Exception as math_error:
+                logger.debug("Lateral projection failed at idx %d: %s", segment_idx, math_error)
+        return candidate_waypoints
+
+    def _evaluate_candidate_corridor(
+        self,
+        via_coordinates_lon_lat: List[List[float]],
+        label: str,
+        primary_route: Dict[str, Any],
+        accepted_geometries: List[List[List[float]]],
+        candidate_index: int,
+        departure_time_iso: str,
+        checkpoint_interval_miles: int,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            candidate_payload = self._call_ors_directions(via_coordinates_lon_lat)
+        except ProviderSnappingError:
+            return None
+        except (RoutingServiceError, NoRouteFoundError):
+            return None
+
+        route_features = candidate_payload.get("features", [])
+        if not route_features:
+            return None
+
+        candidate_route, _ = self._normalize_feature_to_route(
+            route_features[0],
+            route_id=f"route_alt_{candidate_index}",
+            summary_label=label,
+            departure_time_iso=departure_time_iso,
+            checkpoint_interval_miles=checkpoint_interval_miles,
+        )
+
+        distance_ratio = candidate_route["_meters"] / max(1.0, primary_route["_meters"])
+        duration_ratio = candidate_route["_seconds"] / max(1.0, primary_route["_seconds"])
+        if distance_ratio > MAX_DETOUR_RATIO or duration_ratio > MAX_DETOUR_RATIO:
+            return None
+
+        for existing_geometry in accepted_geometries:
+            overlap = compute_geometry_overlap_ratio(candidate_route["geometry"], existing_geometry)
+            if overlap > MAX_OVERLAP_SHARE_RATIO:
+                return None
+
+        return candidate_route
 
     def _generate_candidate_corridors_via_waypoints(
         self,
-        orig_lon_lat: List[float],
-        dest_lon_lat: List[float],
+        origin_lon_lat: List[float],
+        destination_lon_lat: List[float],
         primary_route: Dict[str, Any],
         primary_distance_km: float,
         departure_time_iso: str,
+        checkpoint_interval_miles: int = 25,
     ) -> List[Dict[str, Any]]:
-        """
-        Derive lateral via-waypoints perpendicular to intermediate primary geometry,
-        request alternative corridors from ORS, and filter using detour and overlap rules.
-        """
-        primary_geom = primary_route["geometry"]
-        n_points = len(primary_geom)
-        if n_points < 10:
-            return []
+        candidate_waypoints = self._derive_candidate_waypoints(
+            primary_route["geometry"], primary_distance_km
+        )
+        accepted_corridors: List[Dict[str, Any]] = []
+        accepted_geometries = [primary_route["geometry"]]
 
-        offset_km = scale_lateral_offset_km(primary_distance_km)
-
-        # Sample at ~30% and ~65% along the corridor
-        idx_30 = max(1, int(n_points * 0.30))
-        idx_65 = min(n_points - 2, int(n_points * 0.65))
-
-        target_pairs = [
-            (idx_30, 'left', "Alternative Corridor via North/West deviation"),
-            (idx_30, 'right', "Alternative Corridor via South/East deviation"),
-            (idx_65, 'left', "Alternative Corridor via Upper regional bypass"),
-            (idx_65, 'right', "Alternative Corridor via Lower regional bypass"),
-        ]
-
-        candidate_routes: List[Dict[str, Any]] = []
-        accepted_geometries = [primary_geom]
-        calls_made = 0
-
-        for idx, side, desc in target_pairs:
-            if calls_made >= MAX_LATERAL_CANDIDATE_CALLS or len(candidate_routes) >= 2:
+        for waypoint_coords, label in candidate_waypoints[:MAX_LATERAL_CANDIDATE_CALLS]:
+            if len(accepted_corridors) >= 2:
                 break
 
-            p1 = primary_geom[idx]
-            p2 = primary_geom[idx + 1]
-            try:
-                wpt_lat, wpt_lon = compute_lateral_waypoint(
-                    p1[0], p1[1], p2[0], p2[1], offset_km=offset_km, side=side
-                )
-            except Exception as e:
-                logger.debug("Failed computing waypoint at idx %d: %s", idx, str(e))
-                continue
-
-            calls_made += 1
-            via_coords_lon_lat = [orig_lon_lat, [wpt_lon, wpt_lat], dest_lon_lat]
-
-            try:
-                candidate_data = self._call_ors_directions(via_coords_lon_lat)
-            except ProviderSnappingError as snap_err:
-                logger.warning("Skipping via-waypoint (snapping failed): %s", snap_err.message)
-                continue
-            except (RoutingServiceError, NoRouteFoundError) as route_err:
-                logger.info("Candidate route query skipped: %s", route_err.message)
-                continue
-
-            features = candidate_data.get('features', [])
-            if not features:
-                continue
-
-            route_cand = self._normalize_feature_to_route(
-                features[0],
-                route_id=f"route_alt_{len(candidate_routes) + 1}",
-                summary_override=desc,
+            via_coords = [
+                origin_lon_lat,
+                [waypoint_coords[1], waypoint_coords[0]],
+                destination_lon_lat,
+            ]
+            candidate = self._evaluate_candidate_corridor(
+                via_coordinates_lon_lat=via_coords,
+                label=label,
+                primary_route=primary_route,
+                accepted_geometries=accepted_geometries,
+                candidate_index=len(accepted_corridors) + 1,
                 departure_time_iso=departure_time_iso,
+                checkpoint_interval_miles=checkpoint_interval_miles,
             )
+            if candidate:
+                accepted_geometries.append(candidate["geometry"])
+                accepted_corridors.append(candidate)
 
-            # 1. Detour sanity filter
-            dist_ratio = route_cand["_meters"] / max(1.0, primary_route["_meters"])
-            dur_ratio = route_cand["_seconds"] / max(1.0, primary_route["_seconds"])
-            if dist_ratio > MAX_DETOUR_RATIO or dur_ratio > MAX_DETOUR_RATIO:
-                logger.info(
-                    "Candidate rejected by detour ratio: dist_ratio=%.2f, dur_ratio=%.2f",
-                    dist_ratio, dur_ratio
+        return accepted_corridors
+
+    def _fetch_raw_corridors(
+        self,
+        origin_lon_lat: List[float],
+        destination_lon_lat: List[float],
+        air_distance_km: float,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        features: List[Dict[str, Any]] = []
+        used_native_alternatives = False
+
+        if air_distance_km < NATIVE_ALTERNATIVES_THRESHOLD_KM:
+            try:
+                alternative_config = {"target_count": 3, "share_factor": 0.6, "weight_factor": 1.4}
+                payload = self._call_ors_directions(
+                    [origin_lon_lat, destination_lon_lat],
+                    alternative_routes=alternative_config,
                 )
-                continue
+                features = payload.get("features", [])
+                if len(features) > 1:
+                    used_native_alternatives = True
+            except RoutingServiceError as routing_error:
+                if routing_error.code != "distance_limit_exceeded":
+                    raise
 
-            # 2. Overlap filter against all accepted routes
-            cand_geom = route_cand["geometry"]
-            is_too_overlapping = False
-            for accepted_geom in accepted_geometries:
-                overlap = compute_geometry_overlap_ratio(cand_geom, accepted_geom)
-                if overlap > MAX_OVERLAP_SHARE_RATIO:
-                    logger.info("Candidate rejected by overlap ratio: %.2f > %.2f", overlap, MAX_OVERLAP_SHARE_RATIO)
-                    is_too_overlapping = True
-                    break
+        if not features:
+            payload = self._call_ors_directions([origin_lon_lat, destination_lon_lat])
+            features = payload.get("features", [])
 
-            if is_too_overlapping:
-                continue
+        if not features:
+            raise NoRouteFoundError("No driving route available between origin and destination.")
 
-            # Accepted candidate
-            accepted_geometries.append(cand_geom)
-            candidate_routes.append(route_cand)
-
-        return candidate_routes
+        return features, used_native_alternatives
 
     def analyze_routes(
         self,
@@ -333,126 +341,106 @@ class RoutingService:
         load_weight_lb: float,
         checkpoint_interval_miles: int,
     ) -> Dict[str, Any]:
-        """
-        Main entry point for calculating up to 3 driving corridors.
-        Geocodes points, selects native alternatives or lateral waypoint fallback,
-        applies detour and overlap filtering, and returns normalized routes.
-        """
-        # 1. Geocode locations
-        orig_lat, orig_lon, orig_label = self.geocoder.geocode(origin)
+        origin_lat, origin_lon, origin_label = self.geocoder.geocode(origin)
         dest_lat, dest_lon, dest_label = self.geocoder.geocode(destination)
 
-        orig_lon_lat = [orig_lon, orig_lat]
+        origin_lon_lat = [origin_lon, origin_lat]
         dest_lon_lat = [dest_lon, dest_lat]
+        air_distance_km = haversine_distance_km(origin_lat, origin_lon, dest_lat, dest_lon)
 
-        # 2. Estimate straight-line distance
-        crow_dist_km = haversine_distance_km(orig_lat, orig_lon, dest_lat, dest_lon)
-
-        features: List[Dict[str, Any]] = []
-        used_native_alternatives = False
-
-        # 3. If under the 90 km threshold, attempt native alternatives
-        if crow_dist_km < NATIVE_ALTERNATIVES_THRESHOLD_KM:
-            try:
-                alt_cfg = {"target_count": 3, "share_factor": 0.6, "weight_factor": 1.4}
-                data = self._call_ors_directions([orig_lon_lat, dest_lon_lat], alternative_routes=alt_cfg)
-                features = data.get('features', [])
-                if len(features) > 1:
-                    used_native_alternatives = True
-            except RoutingServiceError as e:
-                if e.code == "distance_limit_exceeded":
-                    logger.info("Native alternatives rejected by ORS (code 2004). Falling back.")
-                else:
-                    raise
-
-        # 4. If native alternatives were not used or not returned, request primary route
-        if not features:
-            data = self._call_ors_directions([orig_lon_lat, dest_lon_lat])
-            features = data.get('features', [])
-
-        if not features:
-            raise NoRouteFoundError("No driving route available between origin and destination.")
-
-        # Normalize primary route (always route_primary and first)
-        primary_route = self._normalize_feature_to_route(
-            features[0],
-            route_id="route_primary",
-            summary_override=f"Primary corridor from {orig_label} to {dest_label}",
-            departure_time_iso=departure_time_iso,
+        raw_features, used_native = self._fetch_raw_corridors(
+            origin_lon_lat, dest_lon_lat, air_distance_km
         )
 
-        final_routes: List[Dict[str, Any]] = [primary_route]
-        warnings: List[str] = []
+        primary_corridor, primary_warnings = self._normalize_feature_to_route(
+            raw_features[0],
+            route_id="route_primary",
+            summary_label=f"Primary corridor from {origin_label} to {dest_label}",
+            departure_time_iso=departure_time_iso,
+            checkpoint_interval_miles=checkpoint_interval_miles,
+        )
 
-        if used_native_alternatives and len(features) > 1:
-            # Process native alternatives through sanity and overlap checks
-            for idx, feat in enumerate(features[1:], start=1):
-                alt_route = self._normalize_feature_to_route(
-                    feat,
-                    route_id=f"route_alt_{idx}",
-                    summary_override=f"Alternative corridor {idx}",
+        corridor_bundle: List[Dict[str, Any]] = [primary_corridor]
+        operational_warnings: List[str] = list(primary_warnings)
+
+        if used_native and len(raw_features) > 1:
+            for alt_idx, feature_item in enumerate(raw_features[1:], start=1):
+                alt_corridor, alt_warnings = self._normalize_feature_to_route(
+                    feature_item,
+                    route_id=f"route_alt_{alt_idx}",
+                    summary_label=f"Alternative corridor {alt_idx}",
                     departure_time_iso=departure_time_iso,
+                    checkpoint_interval_miles=checkpoint_interval_miles,
                 )
-                dist_ratio = alt_route["_meters"] / max(1.0, primary_route["_meters"])
-                if dist_ratio <= MAX_DETOUR_RATIO:
-                    overlap = compute_geometry_overlap_ratio(alt_route["geometry"], primary_route["geometry"])
-                    if overlap <= MAX_OVERLAP_SHARE_RATIO:
-                        final_routes.append(alt_route)
+                operational_warnings.extend(
+                    [w for w in alt_warnings if w not in operational_warnings]
+                )
+                if (
+                    alt_corridor["_meters"] / max(1.0, primary_corridor["_meters"])
+                ) <= MAX_DETOUR_RATIO:
+                    if (
+                        compute_geometry_overlap_ratio(
+                            alt_corridor["geometry"], primary_corridor["geometry"]
+                        )
+                        <= MAX_OVERLAP_SHARE_RATIO
+                    ):
+                        corridor_bundle.append(alt_corridor)
         else:
-            # Trip >= 90 km or native alternatives unavailable -> Via-waypoint fallback
-            primary_km = primary_route["_meters"] / 1000.0
+            primary_km = primary_corridor["_meters"] / 1000.0
             candidate_corridors = self._generate_candidate_corridors_via_waypoints(
-                orig_lon_lat=orig_lon_lat,
-                dest_lon_lat=dest_lon_lat,
-                primary_route=primary_route,
+                origin_lon_lat=origin_lon_lat,
+                destination_lon_lat=dest_lon_lat,
+                primary_route=primary_corridor,
                 primary_distance_km=primary_km,
                 departure_time_iso=departure_time_iso,
+                checkpoint_interval_miles=checkpoint_interval_miles,
             )
-            final_routes.extend(candidate_corridors)
+            corridor_bundle.extend(candidate_corridors)
             if candidate_corridors:
-                warnings.append(
+                operational_warnings.append(
                     "Long-distance route: alternative paths were derived via lateral corridor bypasses."
                 )
 
-        # Clean internal underscore properties
-        for r in final_routes:
-            r.pop("_meters", None)
-            r.pop("_seconds", None)
+        return self._format_final_analysis_response(corridor_bundle, operational_warnings)
 
-        routes_returned = len(final_routes)
-        fewer_routes_reason: Optional[str] = None
-        if routes_returned < 3:
-            if routes_returned == 1:
-                fewer_routes_reason = (
-                    "Only 1 primary corridor available. Candidate alternative corridors exceeded the 1.5x detour threshold or shared > 80% route length."
-                )
-            else:
-                fewer_routes_reason = (
-                    "Only 2 distinct driving corridors meet truck safety, detour (<= 1.5x), and overlap (<= 80%) criteria."
-                )
+    @staticmethod
+    def _format_final_analysis_response(
+        corridor_bundle: List[Dict[str, Any]],
+        operational_warnings: List[str],
+    ) -> Dict[str, Any]:
+        for route_record in corridor_bundle:
+            route_record.pop("_meters", None)
+            route_record.pop("_seconds", None)
 
-        ranking_reasons = [
-            f"Primary route ({final_routes[0]['distance_miles']} mi, {final_routes[0]['duration_minutes']} min) recommended as the most direct commercial highway corridor."
-        ]
-        if routes_returned > 1:
-            ranking_reasons.append(
-                f"{routes_returned - 1} alternative corridor(s) identified for weather hazard avoidance."
+        corridor_count = len(corridor_bundle)
+        fewer_routes_reason = None
+        if corridor_count < 3:
+            fewer_routes_reason = (
+                "Only 1 primary corridor available. Candidate alternative corridors exceeded the 1.5x detour threshold or shared > 80% route length."
+                if corridor_count == 1
+                else "Only 2 distinct driving corridors meet truck safety, detour (<= 1.5x), and overlap (<= 80%) criteria."
             )
 
-        recommendation = {
-            "recommended_route_id": final_routes[0]["route_id"],
-            "route_eligibility": {r["route_id"]: True for r in final_routes},
-            "ranking_reasons": ranking_reasons,
-            "no_route_meets_safety_thresholds": False,
-        }
+        ranking_reasons = [
+            f"Primary route ({corridor_bundle[0]['distance_miles']} mi, {corridor_bundle[0]['duration_minutes']} min) recommended as the most direct commercial highway corridor."
+        ]
+        if corridor_count > 1:
+            ranking_reasons.append(
+                f"{corridor_count - 1} alternative corridor(s) identified for weather hazard avoidance."
+            )
 
         return {
             "routes_requested": 3,
-            "routes_returned": routes_returned,
+            "routes_returned": corridor_count,
             "fewer_routes_reason": fewer_routes_reason,
-            "routes": final_routes,
-            "recommendation": recommendation,
+            "routes": corridor_bundle,
+            "recommendation": {
+                "recommended_route_id": corridor_bundle[0]["route_id"],
+                "route_eligibility": {route["route_id"]: True for route in corridor_bundle},
+                "ranking_reasons": ranking_reasons,
+                "no_route_meets_safety_thresholds": False,
+            },
             "forecast_timeline": [],
-            "warnings": warnings,
+            "warnings": operational_warnings,
             "provider_errors": [],
         }

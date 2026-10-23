@@ -1,42 +1,48 @@
-"""
-Configuration constants and mathematical thresholds for OpenRouteService routing,
-alternative corridor derivation, and coordinate conversions.
-"""
-
 import os
 
-# Distance threshold: requests under 90 km can attempt native ORS alternatives.
-# Requests >= 90 km (or whenever ORS returns error 2004) use lateral via-waypoint fallback.
+# The public OpenRouteService instance caps alternative routes at 100 km; 90 km provides a safety margin.
 NATIVE_ALTERNATIVES_THRESHOLD_KM = 90.0
 
-# Lateral via-waypoint scaling constants
-BASE_LATERAL_OFFSET_RATIO = 0.08  # 8% of total corridor length
-MIN_LATERAL_OFFSET_KM = 20.0       # Minimum lateral displacement (km)
-MAX_LATERAL_OFFSET_KM = 80.0       # Maximum lateral displacement (km)
+BASE_LATERAL_OFFSET_RATIO = 0.08
+MIN_LATERAL_OFFSET_KM = 20.0
+MAX_LATERAL_OFFSET_KM = 80.0
 
-# Rate limiting & quota safety
-MAX_LATERAL_CANDIDATE_CALLS = 4    # Strict cap on candidate routing calls per analyze request
-DEFAULT_REQUEST_TIMEOUT = (5.0, 15.0)  # (connect timeout, read timeout) in seconds
+# OpenRouteService enforces a 40 req/min rate limit; 4 calls per request guarantees headroom.
+MAX_LATERAL_CANDIDATE_CALLS = 4
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
+DEFAULT_READ_TIMEOUT_SECONDS = 15.0
+DEFAULT_REQUEST_TIMEOUT_SECONDS = (
+    DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_READ_TIMEOUT_SECONDS,
+)
+DEFAULT_REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT_SECONDS
 
-# Route sanity & filtering thresholds
-MAX_DETOUR_RATIO = 1.5             # Reject routes > 1.5x primary distance or duration
-MAX_OVERLAP_SHARE_RATIO = 0.80     # Reject candidate routes sharing > 80% length with accepted routes
-OVERLAP_BUFFER_KM = 5.0            # Spatial tolerance buffer (km) when checking shared corridors
+# Truck routes exceeding 1.5x primary travel time or sharing > 80% geometry are not commercially viable alternatives.
+MAX_DETOUR_RATIO = 1.5
+MAX_OVERLAP_SHARE_RATIO = 0.80
+OVERLAP_BUFFER_KM = 5.0
 
-# Unit conversion factors
-METERS_TO_MILES = 0.000621371192
-SECONDS_TO_MINUTES = 1.0 / 60.0
+MILES_PER_METER = 0.000621371192
+MILES_PER_KM = 0.621371192
+MINUTES_PER_SECOND = 1.0 / 60.0
+KM_PER_DEGREE_LATITUDE = 110.574
+KM_PER_DEGREE_LONGITUDE_AT_EQUATOR = 111.320
+EARTH_RADIUS_KM = 6371.0
 
-# OpenRouteService API endpoints (HeiGIT unified gateway infrastructure)
+# Prevents generating a duplicate checkpoint within walking distance of the destination.
+MIN_DESTINATION_GAP_MILES = 0.5
+MAX_CHECKPOINTS_SAFETY_LIMIT = 100
+ALLOWED_CHECKPOINT_INTERVALS_MILES = (10, 25, 50)
+
+# HeiGIT migrated active routing infrastructure from api.openrouteservice.org to api.heigit.org.
 ORS_BASE_URL = os.environ.get("ORS_BASE_URL", "https://api.heigit.org")
 ORS_DIRECTIONS_ENDPOINT = os.environ.get(
     "ORS_DIRECTIONS_ENDPOINT",
-    "https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson"
+    "https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson",
 )
 ORS_GEOCODE_ENDPOINT = os.environ.get(
     "ORS_GEOCODE_ENDPOINT",
-    "https://api.heigit.org/pelias/v1/search"
+    "https://api.heigit.org/pelias/v1/search",
 )
 
-# Caching TTL for geocoded locations (7 days)
 GEOCODE_CACHE_TTL_SECONDS = 86400 * 7

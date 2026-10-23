@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 @pytest.mark.django_db
 def test_health_check_endpoint():
     client = APIClient()
-    url = reverse('health-check')
+    url = reverse("health-check")
     response = client.get(url)
 
     assert response.status_code == status.HTTP_200_OK
@@ -19,7 +19,7 @@ def test_health_check_endpoint():
 
 def test_cors_headers_on_health_endpoint():
     client = APIClient()
-    response = client.get('/api/health/', HTTP_ORIGIN='http://localhost:8080')
+    response = client.get("/api/health/", HTTP_ORIGIN="http://localhost:8080")
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.headers.get('Access-Control-Allow-Origin') == 'http://localhost:8080'
+    assert response.headers.get("Access-Control-Allow-Origin") == "http://localhost:8080"

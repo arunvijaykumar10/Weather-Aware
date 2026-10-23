@@ -3,13 +3,7 @@
  * Single source of truth aligned directly with Django REST Framework serializers.
  */
 
-export type RiskLevel =
-  | 'low'
-  | 'moderate'
-  | 'high'
-  | 'severe'
-  | 'no_travel'
-  | 'unknown';
+export type RiskLevel = 'low' | 'moderate' | 'high' | 'severe' | 'no_travel' | 'unknown';
 
 export type WeatherAvailability = 'available' | 'unavailable' | 'missing';
 
