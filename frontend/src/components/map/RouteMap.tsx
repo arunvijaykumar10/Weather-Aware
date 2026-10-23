@@ -10,7 +10,7 @@ import { CorridorHeatmapLayer } from './CorridorHeatmapLayer';
 import { ForecastTimelineSlider } from './ForecastTimelineSlider';
 import { MapLegend } from './MapLegend';
 
-interface RouteMapProps {
+export interface RouteMapProps {
   routes: Route[];
   selectedRouteId?: string;
   selectedCheckpointId?: string;
@@ -164,3 +164,5 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     </Box>
   );
 };
+
+export default RouteMap;
