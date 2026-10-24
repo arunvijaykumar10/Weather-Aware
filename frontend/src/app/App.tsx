@@ -87,7 +87,7 @@ export const AppContent: React.FC = () => {
       <Stack spacing={2.5}>
         {errorMessage && (
           <Alert severity="warning" onClose={() => setErrorMessage(null)} sx={{ borderRadius: 2 }}>
-            Backend Connection Note: {errorMessage}. (Ensure Django is running on port 8000)
+            Service Notification: {errorMessage}
           </Alert>
         )}
 
@@ -96,47 +96,56 @@ export const AppContent: React.FC = () => {
           <Paper
             elevation={0}
             sx={{
-              p: 2,
+              p: { xs: 1.5, sm: 2 },
               borderRadius: 3,
               border: '1px solid #e2e8f0',
               bgcolor: '#ffffff',
               display: 'flex',
               flexDirection: { xs: 'column', sm: 'row' },
               justifyContent: 'space-between',
-              alignItems: { xs: 'flex-start', sm: 'center' },
+              alignItems: { xs: 'stretch', sm: 'center' },
               gap: 1.5,
               boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)',
             }}
           >
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
               <Box
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 38,
-                  height: 38,
+                  width: { xs: 34, sm: 38 },
+                  height: { xs: 34, sm: 38 },
                   borderRadius: 2,
                   bgcolor: 'primary.main',
                   color: '#ffffff',
+                  flexShrink: 0,
                 }}
               >
-                <LocalShippingIcon sx={{ fontSize: 20 }} />
+                <LocalShippingIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />
               </Box>
-              <Box>
-                <Typography variant="subtitle1" fontWeight={800} color="text.primary">
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={800}
+                  color="text.primary"
+                  sx={{
+                    fontSize: { xs: '0.95rem', sm: '1.05rem' },
+                    wordBreak: 'break-word',
+                  }}
+                >
                   {lastRequest.origin} ➔ {lastRequest.destination}
                 </Typography>
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  <Typography variant="caption" color="text.secondary">
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ gap: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
                     Load: <strong>{lastRequest.load_weight_lb.toLocaleString()} lbs</strong>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">•</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
                     Checkpoints: <strong>Every {lastRequest.checkpoint_interval_miles} mi</strong>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">•</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
                     Status: <strong style={{ color: '#10b981' }}>Routes Computed</strong>
                   </Typography>
                 </Stack>
@@ -155,6 +164,8 @@ export const AppContent: React.FC = () => {
                 borderRadius: 2,
                 borderColor: '#cbd5e1',
                 color: 'text.primary',
+                width: { xs: '100%', sm: 'auto' },
+                flexShrink: 0,
               }}
             >
               {isFormExpanded ? 'Hide Trip Planner' : 'Edit Trip Planner'}
@@ -171,9 +182,9 @@ export const AppContent: React.FC = () => {
 
         {/* Cockpit Two-Column Layout once routes are calculated */}
         {analysisResult && (
-          <Grid container spacing={3} alignItems="flex-start">
-            {/* Left Column: Recommended Banner & 3 Interactive Route Cards */}
-            <Grid item xs={12} lg={5.5}>
+          <Grid container spacing={{ xs: 2, sm: 2.5, md: 3 }} alignItems="flex-start">
+            {/* Left Column: Recommended Banner & Interactive Route Cards */}
+            <Grid item xs={12} lg={5} xl={4.5}>
               <RouteComparisonSection
                 analysis={analysisResult}
                 selectedRouteId={selectedRouteId}
@@ -185,7 +196,8 @@ export const AppContent: React.FC = () => {
             <Grid
               item
               xs={12}
-              lg={6.5}
+              lg={7}
+              xl={7.5}
               sx={{
                 position: { lg: 'sticky' },
                 top: { lg: 84 },

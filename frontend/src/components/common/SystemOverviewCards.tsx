@@ -5,30 +5,30 @@ import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import ShieldIcon from '@mui/icons-material/Shield';
 
-const ARCHITECTURE_PILLARS = [
+const CAPABILITY_PILLARS = [
   {
-    title: 'Up to 3 Routes',
+    title: 'Multi-Corridor Generation',
     description:
-      'Generates alternative driving paths using routing engine APIs with geometry and maneuver segments.',
+      'Computes alternative interstate highway corridors using high-performance routing with turn-by-turn geometry and detour validation.',
     icon: <AltRouteIcon sx={{ color: '#2563eb', fontSize: 24 }} />,
     color: '#2563eb',
-    badge: 'Step 1: Multi-Corridor',
+    badge: 'Corridor Routing',
   },
   {
-    title: 'Weather Risk Scoring',
+    title: 'Dynamic Weather Telemetry',
     description:
-      'Backend checks weather forecasts (wind, precipitation, snow, visibility) at checkpoints along each route.',
+      'Continuously queries high-resolution atmospheric models at continuous intervals along the truck trajectory to evaluate wind, rain, and snow hazards.',
     icon: <CloudQueueIcon sx={{ color: '#0284c7', fontSize: 24 }} />,
     color: '#0284c7',
-    badge: 'Step 2: Micro-Forecast',
+    badge: 'Micro-Forecast',
   },
   {
-    title: 'Driver Safety Ranking',
+    title: 'Load-Adaptive Safety Engine',
     description:
-      'The backend serves as the single source of truth for weather risk ranking and route recommendations.',
+      'Dynamically scales crosswind rollover and traction thresholds based on gross vehicle weight to recommend the safest operational corridor.',
     icon: <LocalShippingIcon sx={{ color: '#10b981', fontSize: 24 }} />,
     color: '#10b981',
-    badge: 'Step 3: Safe Choice',
+    badge: 'Safety Compliance',
   },
 ];
 
@@ -59,18 +59,18 @@ export const SystemOverviewCards: React.FC = () => (
         <ShieldIcon sx={{ fontSize: 18 }} />
       </Box>
       <Typography variant="h5" component="h2" color="text.primary" sx={{ fontWeight: 800 }}>
-        System Overview & Architecture
+        Fleet Safety Intelligence & Capabilities
       </Typography>
     </Stack>
 
     <Typography variant="body1" color="text.secondary" paragraph sx={{ maxWidth: 800, mb: 3 }}>
-      Spotter calculates commercial driving corridors for heavy freight, continuously monitoring weather hazards
+      Calculates commercial driving corridors for heavy freight, continuously monitoring weather hazards
       along active routes to dynamically recommend the safest and most efficient path.
     </Typography>
 
-    <Grid container spacing={2.5}>
-      {ARCHITECTURE_PILLARS.map((pillar) => (
-        <Grid item xs={12} md={4} key={pillar.title}>
+    <Grid container spacing={{ xs: 2, sm: 2.5 }}>
+      {CAPABILITY_PILLARS.map((pillar) => (
+        <Grid item xs={12} sm={6} md={4} key={pillar.title}>
           <Card
             elevation={0}
             sx={{
@@ -108,8 +108,8 @@ export const SystemOverviewCards: React.FC = () => (
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: 36,
-                    height: 36,
+                    width: 38,
+                    height: 38,
                     borderRadius: 2,
                     bgcolor: '#ffffff',
                     border: '1px solid #e2e8f0',
@@ -117,7 +117,7 @@ export const SystemOverviewCards: React.FC = () => (
                 >
                   {pillar.icon}
                 </Box>
-                <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 800 }}>
                   {pillar.title}
                 </Typography>
               </Stack>

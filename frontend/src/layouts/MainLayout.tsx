@@ -26,12 +26,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     >
       <HeaderBar isConnected={isConnected} isLoading={isCheckingHealth} />
       <Container
-        maxWidth="xl"
+        maxWidth={false}
         sx={{
           mt: { xs: 2, sm: 2.5 },
           mb: 4,
           flexGrow: 1,
-          px: { xs: 1.5, sm: 2.5, md: 3 },
+          px: { xs: 1.5, sm: 2.5, md: 3, lg: 4 },
         }}
       >
         {children}

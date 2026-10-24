@@ -7,7 +7,7 @@ describe('TripPlannerForm component', () => {
     render(<TripPlannerForm isLoading={false} onAnalyze={vi.fn()} />);
 
     expect(
-      screen.getByRole('heading', { name: /plan weather-aware truck route/i })
+      screen.getByRole('heading', { name: /dispatch & route configuration/i })
     ).toBeInTheDocument();
     const originInput = screen.getByLabelText(/origin address/i) as HTMLInputElement;
     const destInput = screen.getByLabelText(/destination address/i) as HTMLInputElement;

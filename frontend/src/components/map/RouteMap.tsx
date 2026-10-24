@@ -111,7 +111,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       <Paper
         elevation={0}
         sx={{
-          height: { xs: 440, sm: 500, md: 540, lg: 580 },
+          height: { xs: 360, sm: 440, md: 500, lg: 560, xl: 620 },
           width: '100%',
           borderRadius: 3,
           overflow: 'hidden',
@@ -123,6 +123,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           center={DEFAULT_CENTER}
           zoom={5}
           preferCanvas={true}
+          scrollWheelZoom={false}
           style={{ height: '100%', width: '100%' }}
         >
           <TileLayer url={OPENSTREETMAP_TILE_URL} attribution={OPENSTREETMAP_ATTRIBUTION} />

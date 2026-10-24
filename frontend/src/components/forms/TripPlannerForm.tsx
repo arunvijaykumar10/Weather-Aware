@@ -6,10 +6,7 @@ import {
   Button,
   Grid,
   CircularProgress,
-  ToggleButtonGroup,
-  ToggleButton,
-  FormControl,
-  FormLabel,
+  MenuItem,
   Box,
   Chip,
   Stack,
@@ -90,10 +87,10 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
           </Box>
           <Box>
             <Typography variant="h6" component="h2" color="text.primary" sx={{ fontWeight: 800 }}>
-              Plan Weather-Aware Truck Route
+              Dispatch & Route Configuration
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Enter real-time locations or select a sample freight corridor below
+              Configure origin, destination, departure window, and cargo weight
             </Typography>
           </Box>
         </Stack>
@@ -137,10 +134,10 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
               fontSize: '0.7rem',
-              minWidth: 100,
+              minWidth: 110,
             }}
           >
-            Quick Examples:
+            Freight Lanes:
           </Typography>
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
             {TRIP_PRESETS.map((preset: TripPreset) => {
@@ -223,7 +220,7 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
           </Grid>
 
           {/* Departure Date & Time */}
-          <Grid item xs={12} sm={5}>
+          <Grid item xs={12} sm={12} md={4}>
             <TextField
               label="Departure Date & Time"
               type="datetime-local"
@@ -250,7 +247,7 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
           </Grid>
 
           {/* Load Weight */}
-          <Grid item xs={12} sm={3.5}>
+          <Grid item xs={12} sm={6} md={4}>
             <TextField
               label="Cargo Load Weight"
               type="number"
@@ -277,55 +274,35 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
           </Grid>
 
           {/* Checkpoint Spacing */}
-          <Grid item xs={12} sm={3.5}>
-            <FormControl fullWidth>
-              <FormLabel
-                sx={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  color: 'text.secondary',
-                  mb: 0.5,
-                }}
-              >
-                Checkpoint Spacing
-              </FormLabel>
-              <ToggleButtonGroup
-                value={checkpointInterval}
-                exclusive
-                onChange={(_, value) => {
-                  if (value) setCheckpointInterval(value as CheckpointInterval);
-                }}
-                disabled={isLoading}
-                fullWidth
-                size="small"
-                aria-label="Checkpoint interval in miles"
-                sx={{
-                  bgcolor: '#f8fafc',
-                  '& .MuiToggleButton-root': {
-                    fontWeight: 700,
-                    fontSize: '0.8rem',
-                    py: 1,
-                    borderColor: '#e2e8f0',
-                    '&.Mui-selected': {
-                      bgcolor: 'primary.main',
-                      color: '#ffffff',
-                      '&:hover': {
-                        bgcolor: 'primary.dark',
-                      },
-                    },
-                  },
-                }}
-              >
-                <ToggleButton value={10}>10 mi</ToggleButton>
-                <ToggleButton value={25}>25 mi</ToggleButton>
-                <ToggleButton value={50}>50 mi</ToggleButton>
-              </ToggleButtonGroup>
-            </FormControl>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              select
+              label="Checkpoint Spacing"
+              value={checkpointInterval}
+              onChange={(e) =>
+                setCheckpointInterval(Number(e.target.value) as CheckpointInterval)
+              }
+              helperText="Sample weather every 10, 25, or 50 miles"
+              fullWidth
+              required
+              disabled={isLoading}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <RouteIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                  </InputAdornment>
+                ),
+              }}
+              inputProps={{ 'aria-label': 'Checkpoint interval in miles' }}
+            >
+              <MenuItem value={10}>Every 10 miles (High Precision)</MenuItem>
+              <MenuItem value={25}>Every 25 miles (Standard Balanced)</MenuItem>
+              <MenuItem value={50}>Every 50 miles (Express Corridor)</MenuItem>
+            </TextField>
           </Grid>
 
           {/* Submit Action Button */}
-          <Grid item xs={12} sx={{ mt: 1 }}>
+          <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
             <Button
               type="submit"
               variant="contained"
@@ -333,15 +310,17 @@ export const TripPlannerForm: React.FC<TripPlannerFormProps> = ({ isLoading, onA
               disabled={isLoading}
               startIcon={
                 isLoading ? (
-                  <CircularProgress size={22} color="inherit" />
+                  <CircularProgress size={20} color="inherit" />
                 ) : (
                   <NavigationIcon sx={{ transform: 'rotate(45deg)' }} />
                 )
               }
-              fullWidth
               sx={{
-                py: 1.5,
-                fontSize: '1rem',
+                width: { xs: '100%', sm: 'auto' },
+                minWidth: 260,
+                px: 4,
+                py: 1.35,
+                fontSize: '0.95rem',
                 fontWeight: 800,
                 letterSpacing: '0.02em',
                 borderRadius: 2.5,

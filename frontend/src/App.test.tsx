@@ -12,14 +12,14 @@ describe('App component', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the Spotter app title, trip planner form, and system overview', async () => {
+  it('renders the application header, dispatch configuration, and fleet capabilities', async () => {
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/health/')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
             status: 'healthy',
-            service: 'spotter-weather-aware-routing-backend',
+            service: 'weather-aware-routing-backend',
           }),
         });
       }
@@ -31,36 +31,33 @@ describe('App component', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: /spotter weather-aware truck routing/i,
+        name: /weather-aware truck route intelligence/i,
       })
     ).toBeInTheDocument();
 
     expect(
       screen.getByRole('heading', {
-        name: /plan weather-aware truck route/i,
+        name: /dispatch & route configuration/i,
       })
     ).toBeInTheDocument();
 
     expect(
       screen.getByRole('heading', {
-        name: /system overview & architecture/i,
+        name: /fleet safety intelligence & capabilities/i,
       })
     ).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByText(/backend connected/i)).toBeInTheDocument();
-    });
+    expect(screen.getByText(/live radar active/i)).toBeInTheDocument();
   });
 
-  it('handles backend connection failure gracefully', async () => {
+  it('handles service connection failure gracefully with service notice', async () => {
     const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'));
     vi.stubGlobal('fetch', mockFetch);
 
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText(/backend disconnected/i)).toBeInTheDocument();
-      expect(screen.getByText(/backend connection note/i)).toBeInTheDocument();
+      expect(screen.getByText(/service notification/i)).toBeInTheDocument();
     });
   });
 
@@ -71,7 +68,7 @@ describe('App component', () => {
           ok: true,
           json: async () => ({
             status: 'healthy',
-            service: 'spotter-weather-aware-routing-backend',
+            service: 'weather-aware-routing-backend',
           }),
         });
       }
@@ -109,7 +106,7 @@ describe('App component', () => {
       ).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/recommended corridor: route_primary/i)).toBeInTheDocument();
+    expect(screen.getByText(/recommended corridor: primary corridor/i)).toBeInTheDocument();
     expect(
       screen.getByText(/optimal safety: zero severe or no-travel weather/i)
     ).toBeInTheDocument();

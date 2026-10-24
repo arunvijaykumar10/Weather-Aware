@@ -13,7 +13,7 @@ def test_health_check_endpoint():
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {
         "status": "healthy",
-        "service": "spotter-weather-aware-routing-backend",
+        "service": "weather-aware-routing-backend",
     }
 
 

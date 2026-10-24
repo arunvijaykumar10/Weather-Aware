@@ -1,5 +1,5 @@
 """
-Django settings for Spotter Weather-Aware Truck Routing backend.
+Django settings for Weather-Aware Truck Route Intelligence backend.
 """
 
 import os

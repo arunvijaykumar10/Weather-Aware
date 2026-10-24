@@ -86,7 +86,7 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
           alignItems={{ xs: 'flex-start', sm: 'center' }}
           spacing={1}
         >
-          <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" sx={{ gap: 1 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -97,12 +97,13 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
                 borderRadius: 1.5,
                 bgcolor: 'rgba(37, 99, 235, 0.08)',
                 color: 'primary.main',
+                flexShrink: 0,
               }}
             >
               <AccessTimeIcon sx={{ fontSize: 18 }} />
             </Box>
             <Box>
-              <Typography variant="subtitle2" fontWeight={800} sx={{ color: 'text.primary', fontSize: '0.9rem' }}>
+              <Typography variant="subtitle2" fontWeight={800} sx={{ color: 'text.primary', fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
                 Corridor Forecast Timeline (0h to 48h)
               </Typography>
             </Box>
@@ -120,7 +121,7 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
           </Stack>
 
           {freshnessText && (
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.72rem' }}>
               {freshnessText}
             </Typography>
           )}
@@ -210,9 +211,9 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
                     onHourChange(h);
                   }}
                   sx={{
-                    px: 1.25,
+                    px: { xs: 0.85, sm: 1.25 },
                     py: 0.5,
-                    fontSize: '0.75rem',
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
                     fontWeight: 700,
                   }}
                 >
@@ -223,7 +224,7 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
           </Stack>
 
           {/* Layer and Opacity Controls */}
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ gap: 1 }}>
             <FormControlLabel
               control={
                 <Switch
@@ -234,7 +235,7 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
                 />
               }
               label={
-                <Typography variant="caption" fontWeight={700} sx={{ color: 'text.primary' }}>
+                <Typography variant="caption" fontWeight={700} sx={{ color: 'text.primary', fontSize: '0.75rem' }}>
                   Heatmap Overlay
                 </Typography>
               }
@@ -242,7 +243,7 @@ export const ForecastTimelineSlider: React.FC<ForecastTimelineSliderProps> = ({
             />
 
             {showHeatmap && (
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 130 }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ width: { xs: 110, sm: 130 } }}>
                 <LayersIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                 <Slider
                   size="small"

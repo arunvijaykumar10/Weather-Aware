@@ -18,7 +18,7 @@ class HealthCheckView(APIView):
         return Response(
             {
                 "status": "healthy",
-                "service": "spotter-weather-aware-routing-backend",
+                "service": "weather-aware-routing-backend",
             },
             status=status.HTTP_200_OK,
         )

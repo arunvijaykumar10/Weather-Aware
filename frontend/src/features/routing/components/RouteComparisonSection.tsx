@@ -4,7 +4,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import VerifiedIcon from '@mui/icons-material/Verified';
-import { RouteAnalyzeResponse } from '../../../types/api';
+import { RouteAnalyzeResponse, Route } from '../../../types/api';
 import { RouteCard } from './RouteCard';
 
 export interface RouteComparisonSectionProps {
@@ -13,6 +13,24 @@ export interface RouteComparisonSectionProps {
   onSelectRoute?: (routeId: string) => void;
 }
 
+const getDisplayRouteTitle = (r: Route): string => {
+  if (r.route_id === 'route_primary') return 'Primary Corridor';
+  if (r.provider_summary) {
+    return r.provider_summary.split(':')[0].trim();
+  }
+  const match = r.route_id.match(/alt_(\d+)/);
+  if (match) return `Commercial Corridor ${Number(match[1]) + 1}`;
+  return r.route_id;
+};
+
+const formatReasonText = (text: string): string => {
+  return text
+    .replace(/route_primary/g, 'Primary Corridor')
+    .replace(/route_alt_1/g, 'Commercial Corridor 2')
+    .replace(/route_alt_2/g, 'Commercial Corridor 3')
+    .replace(/route_alt_(\d+)/g, (_, n) => `Commercial Corridor ${Number(n) + 1}`);
+};
+
 export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
   analysis,
   selectedRouteId,
@@ -20,8 +38,15 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
 }) => {
   const { routes, recommendation, fewer_routes_reason, warnings } = analysis;
 
+  const recommendedRoute = routes.find(
+    (r) => r.route_id === recommendation.recommended_route_id
+  );
+  const recommendedTitle = recommendedRoute
+    ? getDisplayRouteTitle(recommendedRoute)
+    : recommendation.recommended_route_id || 'Optimal Safety Route';
+
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={{ xs: 2, sm: 2.5 }}>
       {/* Safety Recommendation Banner */}
       {recommendation.no_route_meets_safety_thresholds ? (
         <Alert
@@ -33,7 +58,7 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
             boxShadow: '0 8px 24px rgba(239, 68, 68, 0.15)',
           }}
         >
-          <AlertTitle sx={{ fontWeight: 800, fontSize: '1.1rem' }}>
+          <AlertTitle sx={{ fontWeight: 800, fontSize: { xs: '1rem', sm: '1.1rem' } }}>
             Safety Threshold Alert: No Safe Route Available
           </AlertTitle>
           All evaluated corridors exceed safety limits due to extreme weather hazards (No-Travel
@@ -44,37 +69,56 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
         <Paper
           elevation={0}
           sx={{
-            p: { xs: 2.5, sm: 3 },
+            p: { xs: 2, sm: 2.5, md: 3 },
             borderRadius: 3,
             border: '2px solid #2563eb',
-            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(2, 132, 199, 0.08) 100%)',
+            background:
+              'linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(2, 132, 199, 0.08) 100%)',
             boxShadow: '0 8px 24px -4px rgba(37, 99, 235, 0.12)',
             position: 'relative',
             overflow: 'hidden',
           }}
         >
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} mb={1.5} gap={1}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+            mb={1.5}
+            gap={1}
+          >
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Box
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 40,
-                  height: 40,
+                  width: { xs: 36, sm: 40 },
+                  height: { xs: 36, sm: 40 },
                   borderRadius: '50%',
                   bgcolor: 'primary.main',
                   color: '#ffffff',
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)',
+                  flexShrink: 0,
                 }}
               >
-                <VerifiedIcon sx={{ fontSize: 22 }} />
+                <VerifiedIcon sx={{ fontSize: { xs: 20, sm: 22 } }} />
               </Box>
               <Box>
-                <Typography variant="h6" component="h3" fontWeight={800} color="primary.main">
-                  Recommended Corridor: {recommendation.recommended_route_id}
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  fontWeight={800}
+                  color="primary.main"
+                  sx={{ fontSize: { xs: '1rem', sm: '1.15rem' } }}
+                >
+                  Recommended Corridor: {recommendedTitle}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  fontWeight={500}
+                  sx={{ fontSize: { xs: '0.72rem', sm: '0.78rem' }, display: 'block' }}
+                >
                   Selected using backend safety criteria (fewest severe miles, fewest high miles, lowest average risk, shortest duration):
                 </Typography>
               </Box>
@@ -95,7 +139,7 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
           </Stack>
 
           {/* Key ranking reasons with styled checkmarks */}
-          <Box component="ul" sx={{ pl: 1, m: 0, listStyle: 'none' }}>
+          <Box component="ul" sx={{ pl: 0.5, m: 0, listStyle: 'none' }}>
             {recommendation.ranking_reasons.map((reason, idx) => (
               <Stack
                 component="li"
@@ -105,9 +149,18 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
                 key={idx}
                 sx={{ mb: 0.75 }}
               >
-                <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981', mt: 0.25, flexShrink: 0 }} />
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                  {reason}
+                <CheckCircleIcon
+                  sx={{ fontSize: 18, color: '#10b981', mt: 0.25, flexShrink: 0 }}
+                />
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    color: '#1e293b',
+                    fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                  }}
+                >
+                  {formatReasonText(reason)}
                 </Typography>
               </Stack>
             ))}
@@ -124,45 +177,68 @@ export const RouteComparisonSection: React.FC<RouteComparisonSectionProps> = ({
       )}
 
       {/* Operational Warnings */}
-      {warnings && warnings.length > 0 && (
-        <Alert
-          severity="warning"
-          sx={{
-            borderRadius: 2,
-            border: '1px solid #fed7aa',
-            bgcolor: '#fffbeb',
-          }}
-        >
-          <AlertTitle sx={{ fontWeight: 700 }}>Operational Warnings</AlertTitle>
-          <Box component="ul" sx={{ pl: 2, m: 0 }}>
-            {warnings.map((warn, i) => (
-              <Typography component="li" variant="body2" key={i}>
-                {warn}
-              </Typography>
-            ))}
-          </Box>
-        </Alert>
-      )}
+      {warnings &&
+        warnings.filter((w) => !w.toLowerCase().includes('graphhopper')).length > 0 && (
+          <Alert
+            severity="warning"
+            sx={{
+              borderRadius: 2,
+              border: '1px solid #fed7aa',
+              bgcolor: '#fffbeb',
+            }}
+          >
+            <AlertTitle sx={{ fontWeight: 700 }}>Operational Warnings</AlertTitle>
+            <Box component="ul" sx={{ pl: 2, m: 0 }}>
+              {warnings
+                .filter((w) => !w.toLowerCase().includes('graphhopper'))
+                .map((warn, i) => (
+                  <Typography component="li" variant="body2" key={i}>
+                    {warn}
+                  </Typography>
+                ))}
+            </Box>
+          </Alert>
+        )}
 
       {/* Corridor Comparison Cards Grid */}
-      <Box sx={{ pt: 1 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-end" mb={2}>
+      <Box sx={{ pt: 0.5 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', sm: 'flex-end' }}
+          mb={2}
+          gap={0.5}
+        >
           <Box>
-            <Typography variant="h5" component="h2" fontWeight={800} sx={{ letterSpacing: '-0.02em' }}>
+            <Typography
+              variant="h5"
+              component="h2"
+              fontWeight={800}
+              sx={{
+                letterSpacing: '-0.02em',
+                fontSize: { xs: '1.15rem', sm: '1.35rem', md: '1.5rem' },
+              }}
+            >
               Driving Corridor Comparison ({routes.length} {routes.length === 1 ? 'Route' : 'Routes'})
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ fontSize: { xs: '0.78rem', sm: '0.85rem' } }}
+            >
               Click any corridor below to switch map view, highlight checkpoints, and inspect weather risk.
             </Typography>
           </Box>
         </Stack>
 
-        <Grid container spacing={2.5}>
+        <Grid container spacing={{ xs: 2, sm: 2.5 }}>
           {routes.map((route) => (
             <Grid
               item
               xs={12}
+              sm={routes.length === 1 ? 12 : 6}
               md={routes.length === 1 ? 12 : routes.length === 2 ? 6 : 4}
+              lg={12}
               key={route.route_id}
             >
               <RouteCard

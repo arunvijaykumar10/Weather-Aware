@@ -1,5 +1,5 @@
 /**
- * Spotter Weather-Aware Truck Routing - Typed API Contracts
+ * Weather-Aware Truck Route Intelligence - Typed API Contracts
  * Single source of truth aligned directly with Django REST Framework serializers.
  */
 

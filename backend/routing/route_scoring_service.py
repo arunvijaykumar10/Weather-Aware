@@ -192,26 +192,43 @@ def _generate_ranking_rationale(
         if other_route["route_id"] == rec_id:
             continue
         other_metrics = other_route["metrics"]
+        other_label = (
+            other_route.get("provider_summary", "").split(":")[0].strip()
+            if other_route.get("provider_summary")
+            else (
+                "Primary Corridor"
+                if other_route["route_id"] == "route_primary"
+                else (
+                    "Commercial Corridor 2"
+                    if other_route["route_id"] == "route_alt_1"
+                    else (
+                        "Commercial Corridor 3"
+                        if other_route["route_id"] == "route_alt_2"
+                        else other_route["route_id"]
+                    )
+                )
+            )
+        )
         if other_metrics["has_no_travel_segment"] or other_metrics["no_travel_miles"] > 0.0:
             reasons.append(
-                f"Alternative corridor {other_route['route_id']} was disqualified due to {other_metrics['no_travel_miles']:.1f} miles of No-Travel conditions."
+                f"Alternative corridor {other_label} was disqualified due to {other_metrics['no_travel_miles']:.1f} miles of No-Travel conditions."
             )
             continue
         if other_metrics["severe_miles"] > rec_metrics["severe_miles"] + 0.1:
             reasons.append(
-                f"Bypasses {other_metrics['severe_miles']:.1f} miles of severe weather present on {other_route['route_id']}."
+                f"Bypasses {other_metrics['severe_miles']:.1f} miles of severe weather present on {other_label}."
             )
         elif other_metrics["high_miles"] > rec_metrics["high_miles"] + 0.1:
             reasons.append(
-                f"Reduces high-risk weather miles compared to {other_route['route_id']} ({rec_metrics['high_miles']:.1f} mi vs {other_metrics['high_miles']:.1f} mi)."
+                f"Reduces high-risk weather miles compared to {other_label} ({rec_metrics['high_miles']:.1f} mi vs {other_metrics['high_miles']:.1f} mi)."
             )
         elif other_metrics["numeric_average_risk"] > rec_metrics["numeric_average_risk"] + 0.05:
             reasons.append(
-                f"Lower average weather hazard score than {other_route['route_id']} ({rec_metrics['numeric_average_risk']:.2f} vs {other_metrics['numeric_average_risk']:.2f})."
+                f"Lower average weather hazard score than {other_label} ({rec_metrics['numeric_average_risk']:.2f} vs {other_metrics['numeric_average_risk']:.2f})."
             )
         elif other_route["duration_minutes"] > recommended_route["duration_minutes"] + 1.0:
             reasons.append(
-                f"Shorter travel time than {other_route['route_id']} ({recommended_route['duration_minutes']:.1f} min vs {other_route['duration_minutes']:.1f} min)."
+                f"Shorter travel time than {other_label} ({recommended_route['duration_minutes']:.1f} min vs {other_route['duration_minutes']:.1f} min)."
             )
 
     return reasons

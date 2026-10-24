@@ -5,7 +5,7 @@ export const FooterBar: React.FC = () => (
   <Box
     component="footer"
     sx={{
-      py: 2,
+      py: 2.5,
       px: 2,
       mt: 'auto',
       bgcolor: 'background.paper',
@@ -15,7 +15,7 @@ export const FooterBar: React.FC = () => (
     }}
   >
     <Typography variant="body2" color="text.secondary">
-      Spotter Truck Routing Platform • Leaflet & Open-Meteo Integration
+      Commercial Route Intelligence Platform • Real-time Telemetry & Micro-Forecast Integration
     </Typography>
   </Box>
 );

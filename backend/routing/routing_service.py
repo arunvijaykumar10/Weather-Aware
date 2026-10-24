@@ -129,13 +129,16 @@ class RoutingService:
                 interval_miles=checkpoint_interval_miles,
             )
 
+            corridor_label = (
+                "Primary Corridor"
+                if len(corridors) == 0
+                else f"Commercial Corridor {len(corridors) + 1}"
+            )
+
             corridors.append(
                 {
                     "route_id": route_id,
-                    "provider_summary": (
-                        f"Commercial Corridor {len(corridors) + 1}: {distance_miles:.1f} mi, "
-                        f"{duration_minutes:.0f} min"
-                    ),
+                    "provider_summary": corridor_label,
                     "geometry": leaflet_geometry,
                     "distance_miles": distance_miles,
                     "duration_minutes": duration_minutes,
@@ -169,7 +172,7 @@ class RoutingService:
             departure_time_iso=departure_time_iso,
             checkpoint_interval_miles=checkpoint_interval_miles,
         )
-        operational_warnings: List[str] = ["Driving corridors retrieved via GraphHopper provider."]
+        operational_warnings: List[str] = []
 
         weather_warnings = WeatherService.enrich_corridors_with_weather(
             corridor_bundle,
