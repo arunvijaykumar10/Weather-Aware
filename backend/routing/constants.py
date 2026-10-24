@@ -1,15 +1,10 @@
 import os
 from typing import Optional
 
-# The public OpenRouteService instance caps alternative routes at 100 km; 90 km provides a safety margin.
-NATIVE_ALTERNATIVES_THRESHOLD_KM = 90.0
-
 BASE_LATERAL_OFFSET_RATIO = 0.08
 MIN_LATERAL_OFFSET_KM = 20.0
 MAX_LATERAL_OFFSET_KM = 80.0
 
-# OpenRouteService enforces a 40 req/min rate limit; 4 calls per request guarantees headroom.
-MAX_LATERAL_CANDIDATE_CALLS = 4
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
 DEFAULT_READ_TIMEOUT_SECONDS = 15.0
 DEFAULT_REQUEST_TIMEOUT_SECONDS = (
@@ -35,18 +30,7 @@ MIN_DESTINATION_GAP_MILES = 0.5
 MAX_CHECKPOINTS_SAFETY_LIMIT = 100
 ALLOWED_CHECKPOINT_INTERVALS_MILES = (10, 25, 50)
 
-# HeiGIT migrated active routing infrastructure from api.openrouteservice.org to api.heigit.org.
-ORS_BASE_URL = os.environ.get("ORS_BASE_URL", "https://api.heigit.org")
-ORS_DIRECTIONS_ENDPOINT = os.environ.get(
-    "ORS_DIRECTIONS_ENDPOINT",
-    "https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson",
-)
-ORS_GEOCODE_ENDPOINT = os.environ.get(
-    "ORS_GEOCODE_ENDPOINT",
-    "https://api.heigit.org/pelias/v1/search",
-)
-
-# GraphHopper fallback endpoints
+# GraphHopper routing and geocoding endpoints
 GRAPHHOPPER_ROUTE_ENDPOINT = os.environ.get(
     "GRAPHHOPPER_ROUTE_ENDPOINT", "https://graphhopper.com/api/1/route"
 )

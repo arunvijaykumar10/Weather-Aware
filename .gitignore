@@ -24,6 +24,7 @@ db.sqlite3
 htmlcov/
 
 # Environment and secrets (Never commit real secrets)
+.env.example
 .env
 .env.local
 backend/.env

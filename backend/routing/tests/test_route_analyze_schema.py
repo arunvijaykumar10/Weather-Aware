@@ -247,3 +247,56 @@ class TestRouteAnalyzeEndpoint:
         assert "error" in error_payload
         assert error_payload["error"]["code"] == "request_throttled"
         assert "wait_seconds" in error_payload["error"]["details"]
+
+    def test_geocoding_error_returns_400(
+        self, api_client: APIClient, valid_payload: dict, mock_routing_service_in_view
+    ) -> None:
+        from routing.errors import GeocodingError
+
+        mock_routing_service_in_view.analyze_routes.side_effect = GeocodingError(
+            "Location not found: 'InvalidPlaceXYZ'"
+        )
+        response = api_client.post(self.url, valid_payload, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()
+        assert body["error"]["code"] == "geocoding_error"
+        assert "InvalidPlaceXYZ" in body["error"]["message"]
+
+    def test_provider_timeout_returns_504(
+        self, api_client: APIClient, valid_payload: dict, mock_routing_service_in_view
+    ) -> None:
+        from routing.errors import ProviderTimeoutError
+
+        mock_routing_service_in_view.analyze_routes.side_effect = ProviderTimeoutError(
+            "Routing provider timed out after 10.0s."
+        )
+        response = api_client.post(self.url, valid_payload, format="json")
+        assert response.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+        body = response.json()
+        assert body["error"]["code"] == "provider_timeout"
+
+    def test_provider_rate_limit_returns_429(
+        self, api_client: APIClient, valid_payload: dict, mock_routing_service_in_view
+    ) -> None:
+        from routing.errors import ProviderRateLimitError
+
+        mock_routing_service_in_view.analyze_routes.side_effect = ProviderRateLimitError(
+            "Upstream routing provider rate limit reached."
+        )
+        response = api_client.post(self.url, valid_payload, format="json")
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        body = response.json()
+        assert body["error"]["code"] == "provider_rate_limited"
+
+    def test_no_route_found_returns_404(
+        self, api_client: APIClient, valid_payload: dict, mock_routing_service_in_view
+    ) -> None:
+        from routing.errors import NoRouteFoundError
+
+        mock_routing_service_in_view.analyze_routes.side_effect = NoRouteFoundError(
+            "No drivable route found between origin and destination."
+        )
+        response = api_client.post(self.url, valid_payload, format="json")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        body = response.json()
+        assert body["error"]["code"] == "no_route_found"

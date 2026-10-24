@@ -17,20 +17,13 @@ A full-stack intelligent routing platform designed to calculate driving routes f
   - Final route eligibility and safety ranking
 - The **frontend (React + TypeScript + MUI + Leaflet)** consumes backend responses purely for visualization (interactive map rendering, checkpoint inspection, risk heatmaps, and recommendation badges). **The frontend never duplicates routing or safety decision logic.**
 
-### 2. Routing Provider Strategy: OpenRouteService & Alternative Corridors
-- **Primary Provider**: OpenRouteService (ORS) with the dedicated commercial truck profile (`driving-hgv`).
-- **Authorization & Security**: Server-side API key authentication using the `Authorization: <api_key>` header. Keys and credential headers are never logged or exposed in query URLs.
-- **Short Trips (< 90 km)**: Requests native ORS alternative routes (`alternative_routes: { target_count: 3, share_factor: 0.6, weight_factor: 1.4 }`).
-- **Long Trips (>= 90 km / 300+ miles) & Error 2004 Fallback**:
-  - OpenRouteService public API imposes a 100 km distance cap on native `alternative_routes` (returning error `2004`).
-  - When the trip distance is $\ge 90$ km, or if ORS returns error `2004`, the backend automatically falls back to **lateral via-waypoint corridor derivation**.
-  - **Important Distinction**: Via-waypoint alternatives represent **"alternative corridors"** derived by sampling perpendicular offset waypoints across the route corridor, rather than native provider alternatives.
-- **Via-Waypoint Offset Scaling**: Offset distance is dynamically scaled with trip length (`trip_distance_km * 0.08`), clamped between `MIN_LATERAL_OFFSET_KM = 20.0` km and `MAX_LATERAL_OFFSET_KM = 80.0` km.
+### 2. Routing Provider Strategy: GraphHopper & Alternative Corridors
+- **Primary Provider**: GraphHopper Directions API with multi-path alternative route generation (`algorithm=alternative_route&alternative_route.max_paths=3`).
+- **Authorization & Security**: Server-side API key authentication (`GRAPHHOPPER_API_KEY`). Keys are never exposed to the frontend bundle or client network calls.
 - **Detour Sanity Filter**: Candidates with distance or duration exceeding `1.5x` of the primary route are rejected (`MAX_DETOUR_RATIO = 1.5`).
 - **Overlap Deduplication Filter**: Candidates sharing more than `80%` of their length with any previously accepted route are rejected (`MAX_OVERLAP_SHARE_RATIO = 0.80`).
-- **Snapping Resilience**: If a via-waypoint lands where no road can be snapped (ORS error `2010`), the candidate is skipped gracefully without failing the request.
-- **Quota Cap**: Extra candidate routing calls are capped at a maximum of 4 calls per request. Geocoding queries are cached locally for 7 days.
-- **Vehicle Weight vs Dimensions**: The request payload includes `load_weight_lb` (cargo payload weight). Because physical vehicle dimensions (height, width, axle count) are not collected, artificial dimension caps are not passed to ORS to avoid unintended routing failures. `load_weight_lb` is reserved for backend weather risk calculations (crosswind rollover vulnerability).
+- **Geocoding Resilience & Cache**: Resolves origin and destination via GraphHopper Geocoding API with 7-day local cache. Supports direct `lat,lon` queries to bypass upstream lookups.
+- **Vehicle Weight vs Dimensions**: Cargo payload weight `load_weight_lb` is reserved for backend weather risk calculations (crosswind and rollover vulnerability rules) rather than upstream routing constraints.
 
 ### 3. Checkpoint Generation & ETA Propagation
 - **Equidistant Sampling Along Actual Geometry**: Checkpoints are sampled along the true polyline geometry using Haversine segment lengths rather than straight-line distance.
@@ -347,14 +340,14 @@ venv/bin/python manage.py check
 
 ---
 
-## Manual Testing with Live OpenRouteService API Key (300+ Mile Route)
+## Manual Testing with Live GraphHopper API Key (300+ Mile Route)
 
 To test live commercial truck routing on a 300+ mile cross-country route (e.g., Denver, CO to Salt Lake City, UT ~ 504 miles):
 
 ### 1. Set Your API Key
 In `.env` (or exported in your terminal session):
 ```bash
-export OPENROUTESERVICE_API_KEY="your_openrouteservice_api_key_here"
+export GRAPHHOPPER_API_KEY="your_graphhopper_api_key_here"
 ```
 
 ### 2. Start the Backend API Server
@@ -371,7 +364,7 @@ curl -X POST http://localhost:8000/api/routes/analyze/ \
   -d '{
     "origin": "Denver, CO",
     "destination": "Salt Lake City, UT",
-    "departure_time": "2026-10-23T14:00:00Z",
+    "departure_time": "2026-10-24T14:00:00Z",
     "load_weight_lb": 42000,
     "checkpoint_interval_miles": 25
   }'
@@ -380,14 +373,13 @@ curl -X POST http://localhost:8000/api/routes/analyze/ \
 ### 4. What Output to Expect
 - **Status**: `HTTP 200 OK`
 - **Corridors**: `routes_returned: 2` or `3` distinct driving paths.
-- **Primary Route (`route_primary`)**: Direct commercial truck corridor (~504 miles, ~480–520 minutes) along the primary interstate with full `[lat, lon]` geometry.
-- **Alternative Corridors (`route_alt_1`, `route_alt_2`)**: Distinct regional bypass corridors derived from scaled lateral via-waypoints that deviate significantly ($> 20$ km offset, $< 80\%$ length overlap).
-- **Warnings**: Indicates that alternative corridors were derived via lateral bypasses for long-distance driving.
-- **Recommendation**: Designates `route_primary` as the initial baseline with safety ranking rationale.
+- **Primary Route (`route_primary`)**: Direct commercial truck corridor (~486–525 miles) along the primary interstate with full `[lat, lon]` geometry.
+- **Alternative Corridors (`route_alt_1`, `route_alt_2`)**: Distinct alternative driving corridors that satisfy detour ($< 1.5\times$) and overlap ($< 80\%$) constraints.
+- **Recommendation**: Automatically selects safest corridor based on fewest severe miles, fewest high miles, lowest average risk, and shortest travel duration.
 
 ### 5. Automated Live Integration Test
 You can also run the live integration test at any time by supplying your key:
 ```bash
 cd backend
-RUN_LIVE_ORS_TESTS=1 OPENROUTESERVICE_API_KEY="your_actual_key" venv/bin/pytest routing/tests/test_live_integration.py
+RUN_LIVE_TESTS=1 GRAPHHOPPER_API_KEY="your_actual_key" venv/bin/pytest routing/tests/test_live_integration.py
 ```
