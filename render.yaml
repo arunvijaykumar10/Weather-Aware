@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: truck-route-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python manage.py migrate"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com,localhost,127.0.0.1"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GRAPHHOPPER_API_KEY
+        sync: false

@@ -129,12 +129,22 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "routing.exceptions.custom_exception_handler",
 }
 
-# Local CORS configuration - allow frontend origin (default: localhost:8080)
-frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8080")
-CORS_ALLOWED_ORIGINS = [
-    frontend_origin,
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+# CORS configuration - allow local development and Vercel production domains
+raw_frontend_origins = os.environ.get(
+    "FRONTEND_ORIGIN", "http://localhost:8080,http://localhost:5173"
+)
+parsed_origins = [o.strip() for o in raw_frontend_origins.split(",") if o.strip()]
+CORS_ALLOWED_ORIGINS = list(
+    set(
+        parsed_origins
+        + [
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    )
+)
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
 ]
