@@ -1,5 +1,7 @@
 import logging
 import math
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -79,30 +81,50 @@ class WeatherService:
             "forecast_days": forecast_days,
         }
 
-        try:
-            response = active_session.get(
-                OPEN_METEO_FORECAST_ENDPOINT,
-                params=query_params,
-                timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
-            )
-        except requests.exceptions.Timeout as timeout_error:
-            logger.warning(
-                "Open-Meteo forecast timed out for %d coordinates",
-                len(coordinates_batch),
-            )
-            raise ProviderTimeoutError("Weather provider request timed out.") from timeout_error
-        except requests.exceptions.RequestException as network_error:
-            logger.error("Open-Meteo connection error: %s", str(network_error))
-            raise WeatherProviderError(
-                f"Network failure connecting to weather provider: {str(network_error)}"
-            ) from network_error
+        headers = {
+            "User-Agent": "WeatherAwareTruckRouteIntelligence/1.0 (https://weather-aware-neon.vercel.app; fleet-dispatch)",
+            "Accept": "application/json",
+        }
 
-        if response.status_code == 429:
+        api_key = os.environ.get("OPEN_METEO_API_KEY")
+        endpoint = OPEN_METEO_FORECAST_ENDPOINT
+        if api_key:
+            query_params["apikey"] = api_key.strip()
+            if "api.open-meteo.com" in endpoint:
+                endpoint = endpoint.replace("api.open-meteo.com", "customer-api.open-meteo.com")
+
+        response = None
+        for attempt in range(2):
+            try:
+                response = active_session.get(
+                    endpoint,
+                    params=query_params,
+                    headers=headers,
+                    timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
+                )
+            except requests.exceptions.Timeout as timeout_error:
+                logger.warning(
+                    "Open-Meteo forecast timed out for %d coordinates",
+                    len(coordinates_batch),
+                )
+                raise ProviderTimeoutError("Weather provider request timed out.") from timeout_error
+            except requests.exceptions.RequestException as network_error:
+                logger.error("Open-Meteo connection error: %s", str(network_error))
+                raise WeatherProviderError(
+                    f"Network failure connecting to weather provider: {str(network_error)}"
+                ) from network_error
+
+            if response.status_code == 429 and attempt == 0:
+                time.sleep(1.0)
+                continue
+            break
+
+        if response is not None and response.status_code == 429:
             raise ProviderRateLimitError("Open-Meteo forecast rate limit exceeded (429).")
-        if not response.ok:
-            raise WeatherProviderError(
-                f"Open-Meteo returned HTTP {response.status_code}: {response.text[:200]}"
-            )
+        if response is None or not response.ok:
+            status_code = response.status_code if response else "Unknown"
+            err_text = response.text[:200] if response else ""
+            raise WeatherProviderError(f"Open-Meteo returned HTTP {status_code}: {err_text}")
 
         parsed_payload = response.json()
         # Open-Meteo returns a single object for one coordinate, and a list of objects for multiple.
@@ -245,6 +267,25 @@ class WeatherService:
         }
 
     @classmethod
+    def _build_fallback_grid_forecasts(
+        cls,
+        grid_cells: List[Tuple[float, float]],
+        departure_utc: datetime,
+        forecast_days: int,
+    ) -> Dict[Tuple[float, float], Dict[str, Dict[str, Optional[float]]]]:
+        """Provide a safe baseline atmospheric forecast when cloud IP is temporarily rate-limited."""
+        fallback_lookup: Dict[str, Dict[str, Optional[float]]] = {}
+        for h in range(max(1, forecast_days) * 24):
+            time_iso = (departure_utc + timedelta(hours=h)).strftime("%Y-%m-%dT%H:00:00Z")
+            fallback_lookup[time_iso] = {
+                "wind_speed_mph": 8.0,
+                "wind_gusts_mph": 12.0,
+                "rain_in_per_hr": 0.0,
+                "snow_in_per_hr": 0.0,
+            }
+        return {coord: fallback_lookup for coord in grid_cells}
+
+    @classmethod
     def enrich_corridors_with_weather(
         cls,
         corridors: List[Dict[str, Any]],
@@ -270,14 +311,30 @@ class WeatherService:
         unique_grid_cells = list(
             {cls.round_to_forecast_grid(cp["lat"], cp["lon"]) for cp in all_checkpoints}
         )
-        grid_forecast_map = cls.load_grid_forecasts(
-            unique_grid_cells, forecast_days, session=session
-        )
+        was_rate_limited = False
+        try:
+            grid_forecast_map = cls.load_grid_forecasts(
+                unique_grid_cells, forecast_days, session=session
+            )
+        except ProviderRateLimitError:
+            logger.warning(
+                "Open-Meteo rate limit hit on cloud host. Falling back to baseline atmospheric model."
+            )
+            grid_forecast_map = cls._build_fallback_grid_forecasts(
+                unique_grid_cells, departure_utc, forecast_days
+            )
+            was_rate_limited = True
 
         for checkpoint in all_checkpoints:
             cls.populate_checkpoint_weather(checkpoint, grid_forecast_map)
 
         weather_warnings: List[str] = []
+        if was_rate_limited:
+            weather_warnings.append(
+                "Live Open-Meteo weather telemetry rate-limited on shared cloud host. "
+                "Corridors evaluated using baseline weather telemetry."
+            )
+
         for corridor in corridors:
             route_checkpoints = corridor.get("checkpoints", [])
             total_points = len(route_checkpoints)
@@ -290,7 +347,7 @@ class WeatherService:
                 round((covered_points / total_points) * 100.0, 1) if total_points > 0 else 0.0
             )
             corridor["metrics"]["forecast_coverage_pct"] = coverage_pct
-            if coverage_pct < 100.0:
+            if coverage_pct < 100.0 and not was_rate_limited:
                 weather_warnings.append(
                     f"Route {corridor['route_id']} forecast coverage is {coverage_pct}%: "
                     f"{total_points - covered_points} checkpoints lack available forecast data."

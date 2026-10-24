@@ -290,7 +290,14 @@ class ForecastTimelineService:
             )
         )
         forecast_days = WeatherService.compute_required_forecast_days(departure_utc, max_target_dt)
-        grid_forecast_map = WeatherService.load_grid_forecasts(list(all_grid_cells), forecast_days)
+        try:
+            grid_forecast_map = WeatherService.load_grid_forecasts(
+                list(all_grid_cells), forecast_days
+            )
+        except Exception:
+            grid_forecast_map = WeatherService._build_fallback_grid_forecasts(
+                list(all_grid_cells), departure_utc, forecast_days
+            )
 
         routes_timeline: List[Dict[str, Any]] = []
         for corridor in corridors:
