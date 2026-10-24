@@ -111,12 +111,12 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       <Paper
         elevation={0}
         sx={{
-          height: 520,
+          height: { xs: 440, sm: 500, md: 540, lg: 580 },
           width: '100%',
-          borderRadius: 2,
+          borderRadius: 3,
           overflow: 'hidden',
-          border: 1,
-          borderColor: 'divider',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.08)',
         }}
       >
         <MapContainer

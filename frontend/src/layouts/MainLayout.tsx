@@ -21,10 +21,19 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
+        bgcolor: '#f8fafc',
       }}
     >
       <HeaderBar isConnected={isConnected} isLoading={isCheckingHealth} />
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4, flexGrow: 1 }}>
+      <Container
+        maxWidth="xl"
+        sx={{
+          mt: { xs: 2, sm: 2.5 },
+          mb: 4,
+          flexGrow: 1,
+          px: { xs: 1.5, sm: 2.5, md: 3 },
+        }}
+      >
         {children}
       </Container>
       <FooterBar />

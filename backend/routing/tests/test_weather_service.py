@@ -21,8 +21,10 @@ def create_mock_open_meteo_response(
     rain: float = 0.08,
     showers: float = 0.04,
     snowfall: float = 0.0,
+    base_time: datetime | None = None,
 ) -> list:
-    base_time = datetime(2026, 10, 23, 0, 0, tzinfo=timezone.utc)
+    if base_time is None:
+        base_time = datetime(2026, 10, 23, 0, 0, tzinfo=timezone.utc)
     time_series = [(base_time + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M") for h in range(72)]
 
     payloads = []
@@ -154,12 +156,18 @@ class TestWeatherService:
         mock_response = MagicMock()
         mock_response.ok = True
         mock_response.status_code = 200
+        now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        dep_iso = (now_utc + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        eta0_iso = (now_utc + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        eta1_iso = (now_utc + timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         mock_response.json.return_value = create_mock_open_meteo_response(
             coordinates_count=2,
             wind_speed=15.0,
             wind_gusts=25.0,
             rain=0.05,
             showers=0.05,
+            base_time=now_utc,
         )
 
         corridors = [
@@ -170,13 +178,13 @@ class TestWeatherService:
                         "checkpoint_id": "cp_0",
                         "lat": 39.7392,
                         "lon": -104.9903,
-                        "eta": "2026-10-23T14:00:00Z",
+                        "eta": eta0_iso,
                     },
                     {
                         "checkpoint_id": "cp_1",
                         "lat": 40.7608,
                         "lon": -111.8910,
-                        "eta": "2026-10-23T18:00:00Z",
+                        "eta": eta1_iso,
                     },
                 ],
                 "metrics": {},
@@ -185,14 +193,14 @@ class TestWeatherService:
 
         with patch("requests.Session.get", return_value=mock_response):
             warnings = WeatherService.enrich_corridors_with_weather(
-                corridors, departure_time_iso="2026-10-23T14:00:00Z"
+                corridors, departure_time_iso=dep_iso
             )
 
         assert len(warnings) == 0
         assert corridors[0]["metrics"]["forecast_coverage_pct"] == 100.0
 
         cp0 = corridors[0]["checkpoints"][0]
-        assert cp0["forecast_timestamp"] == "2026-10-23T14:00:00Z"
+        assert cp0["forecast_timestamp"] == eta0_iso
         assert cp0["weather"]["wind_speed_mph"] == 15.0
         assert cp0["weather"]["wind_gusts_mph"] == 25.0
         assert cp0["weather"]["wind_speed_availability"] == "available"
